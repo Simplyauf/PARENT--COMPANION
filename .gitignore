@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.DS_Store
+.env
+.claude/
+
+# Internal docs (BRDs) — public-facing docs will be written before publishing
+projectbrd.md
+BACKEND_STATUS.md
+COMPANION_USER_JOURNEY.md
+imessage-int.md
+clawd messeger setup.md
+
+# One-off local test scripts (may contain keys)
+server/test-*.mjs
