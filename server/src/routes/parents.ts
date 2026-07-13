@@ -1,0 +1,212 @@
+import type { FastifyPluginAsync } from 'fastify'
+import { z } from 'zod'
+import { db } from '../db/index.js'
+import { parents, guardianParentLinks, companionFacts, reminders, summarySchedules, users, activityLogs } from '../db/schema.js'
+import { eq, and } from 'drizzle-orm'
+import { registerPhone } from '../lib/claw.js'
+import { groqChat, COMPANION_NAME } from '../lib/llm.js'
+import { sendIMessageCheckin } from '../lib/notifications.js'
+
+const CreateParentBody = z.object({
+  name: z.string().min(1),
+  phone: z.string().min(7),
+  timezone: z.string().default('America/New_York'),
+  activeHoursFrom: z.string().default('09:00'),
+  activeHoursTo: z.string().default('20:00'),
+  notifyVia: z.enum(['imessage', 'gmail']).default('imessage'),
+  guardianPhone: z.string().optional(),
+  reminders: z.array(z.string()).optional(),
+  facts: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+})
+
+const UpdateParentBody = CreateParentBody.partial().omit({ notifyVia: true, guardianPhone: true })
+
+export const parentRoutes: FastifyPluginAsync = async (fastify) => {
+
+  // GET /api/parents — list all parents this guardian manages
+  fastify.get('/api/parents', async (request, reply) => {
+    const links = await db.query.guardianParentLinks.findMany({
+      where: eq(guardianParentLinks.guardianId, request.userId),
+      with: {
+        parent: {
+          with: {
+            activityLogs: { limit: 1, orderBy: (t, { desc }) => [desc(t.createdAt)] },
+          },
+        },
+      },
+    })
+
+    return links.map(l => ({
+      ...l.parent,
+      role: l.role,
+      notifyVia: l.notifyVia,
+      lastContact: l.parent.activityLogs[0]?.createdAt ?? null,
+    }))
+  })
+
+  // POST /api/parents — create new parent + link to guardian
+  fastify.post('/api/parents', async (request, reply) => {
+    const parse = CreateParentBody.safeParse(request.body)
+    if (!parse.success) return reply.status(400).send({ error: parse.error.flatten() })
+
+    const { name, phone, timezone, activeHoursFrom, activeHoursTo, notifyVia, guardianPhone, reminders: reminderTexts, facts } = parse.data
+
+    if (guardianPhone) {
+      await db.update(users).set({ phone: guardianPhone }).where(eq(users.id, request.userId))
+    }
+
+    const [parent] = await db.insert(parents).values({
+      name, phone, timezone,
+      activeHoursFrom: activeHoursFrom as `${number}:${number}`,
+      activeHoursTo: activeHoursTo as `${number}:${number}`,
+    }).returning()
+
+    await db.insert(guardianParentLinks).values({
+      guardianId: request.userId,
+      parentId: parent.id,
+      role: 'primary',
+      notifyVia,
+    })
+
+    if (reminderTexts?.length) {
+      await db.insert(reminders).values(reminderTexts.map(text => ({ parentId: parent.id, text })))
+    }
+
+    if (facts?.length) {
+      await db.insert(companionFacts).values(facts.map(f => ({ parentId: parent.id, ...f })))
+    }
+
+    // Default weekly summary schedule (Sundays at 6 PM)
+    await db.insert(summarySchedules).values({ parentId: parent.id, frequency: 'weekly', dayOfWeek: 6, sendAt: '18:00' })
+
+    // Register phone with Claw Messenger so inbound replies are routed to us
+    await registerPhone(phone).catch(err => console.warn('[claw] phone register failed:', err.message))
+
+    return reply.status(201).send(parent)
+  })
+
+  // GET /api/parents/:id
+  fastify.get('/api/parents/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+
+    await assertAccess(request.userId, id, reply)
+
+    const parent = await db.query.parents.findFirst({
+      where: eq(parents.id, id),
+      with: {
+        companionFacts: true,
+        reminders: true,
+        summarySchedule: true,
+        guardianLinks: { with: { guardian: true } },
+      },
+    })
+
+    if (!parent) return reply.status(404).send({ error: 'Not found' })
+    return parent
+  })
+
+  // PATCH /api/parents/:id
+  fastify.patch('/api/parents/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const parse = UpdateParentBody.safeParse(request.body)
+    if (!parse.success) return reply.status(400).send({ error: parse.error.flatten() })
+
+    await assertAccess(request.userId, id, reply)
+
+    const { reminders: reminderTexts, facts, ...fields } = parse.data
+
+    if (Object.keys(fields).length) {
+      await db.update(parents).set(fields as Partial<typeof parents.$inferInsert>).where(eq(parents.id, id))
+    }
+
+    return reply.status(200).send({ ok: true })
+  })
+
+  // POST /api/parents/:id/checkin — send an immediate check-in text right now
+  fastify.post('/api/parents/:id/checkin', async (request, reply) => {
+    const { id } = request.params as { id: string }
+
+    await assertAccess(request.userId, id, reply)
+
+    const parent = await db.query.parents.findFirst({
+      where: eq(parents.id, id),
+      with: { companionFacts: true },
+    })
+    if (!parent) return reply.status(404).send({ error: 'Not found' })
+
+    const factsText = parent.companionFacts.map(f => `${f.label}: ${f.value}`).join(', ') || 'nothing yet'
+
+    const msg = await groqChat([
+      {
+        role: 'user',
+        content: `You are ${COMPANION_NAME}, a warm friend who texts ${parent.name}, an elderly person you check in on. What you know about them: ${factsText}.
+
+Their guardian asked you to check in on them right now. If you've never spoken before, introduce yourself by name. Write a warm, casual check-in text — 1–2 sentences, like a real friend texting, never robotic. Reply with ONLY the text message, nothing else.`,
+      },
+    ], { temperature: 0.8 })
+
+    const text = msg.content?.trim()
+    if (!text) return reply.status(502).send({ error: 'Could not generate message' })
+
+    await sendIMessageCheckin(parent.phone, text)
+
+    await db.insert(activityLogs).values({
+      parentId: parent.id,
+      type: 'message',
+      direction: 'outbound',
+      summary: `Guardian-requested check-in: "${text.slice(0, 120)}"`,
+      sentiment: 'neutral',
+      rawTranscript: text,
+    })
+
+    return { ok: true, message: text }
+  })
+
+  // ─── Companion facts ─────────────────────────────────────────────────────
+
+  fastify.post('/api/parents/:id/facts', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { label, value } = request.body as { label: string; value: string }
+
+    await assertAccess(request.userId, id, reply)
+
+    const [fact] = await db.insert(companionFacts).values({ parentId: id, label, value }).returning()
+    return reply.status(201).send(fact)
+  })
+
+  fastify.delete('/api/parents/:id/facts/:factId', async (request, reply) => {
+    const { id, factId } = request.params as { id: string; factId: string }
+    await assertAccess(request.userId, id, reply)
+    await db.delete(companionFacts).where(and(eq(companionFacts.id, factId), eq(companionFacts.parentId, id)))
+    return { ok: true }
+  })
+
+  // ─── Reminders ───────────────────────────────────────────────────────────
+
+  fastify.post('/api/parents/:id/reminders', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { text } = request.body as { text: string }
+
+    await assertAccess(request.userId, id, reply)
+
+    const [reminder] = await db.insert(reminders).values({ parentId: id, text }).returning()
+    return reply.status(201).send(reminder)
+  })
+
+  fastify.delete('/api/parents/:id/reminders/:reminderId', async (request, reply) => {
+    const { id, reminderId } = request.params as { id: string; reminderId: string }
+    await assertAccess(request.userId, id, reply)
+    await db.delete(reminders).where(and(eq(reminders.id, reminderId), eq(reminders.parentId, id)))
+    return { ok: true }
+  })
+}
+
+async function assertAccess(userId: string, parentId: string, reply: any) {
+  const link = await db.query.guardianParentLinks.findFirst({
+    where: and(
+      eq(guardianParentLinks.guardianId, userId),
+      eq(guardianParentLinks.parentId, parentId)
+    ),
+  })
+  if (!link) return reply.status(403).send({ error: 'Access denied' })
+}
