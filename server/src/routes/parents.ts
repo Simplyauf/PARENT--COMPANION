@@ -19,7 +19,12 @@ const CreateParentBody = z.object({
   facts: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
 })
 
-const UpdateParentBody = CreateParentBody.partial().omit({ notifyVia: true, guardianPhone: true })
+const UpdateParentBody = CreateParentBody.partial().omit({ notifyVia: true, guardianPhone: true }).extend({
+  // days > 0 pauses Mae's initiations for that long; null/0 resumes
+  pauseDays: z.number().min(0).max(90).nullable().optional(),
+})
+
+const normalizePhone = (p: string) => p.replace(/[^\d+]/g, '')
 
 export const parentRoutes: FastifyPluginAsync = async (fastify) => {
 
@@ -50,6 +55,16 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
     if (!parse.success) return reply.status(400).send({ error: parse.error.flatten() })
 
     const { name, phone, timezone, activeHoursFrom, activeHoursTo, notifyVia, guardianPhone, reminders: reminderTexts, facts } = parse.data
+
+    // A guardian can't also be the elder — Mae texts the elder directly, so
+    // they need their own number, distinct from the guardian's
+    const self = await db.query.users.findFirst({ where: eq(users.id, request.userId) })
+    const ownPhone = guardianPhone ?? self?.phone
+    if (ownPhone && normalizePhone(ownPhone) === normalizePhone(phone)) {
+      return reply.status(400).send({
+        error: `Your loved one's phone number can't be the same as your own — they need their own number so ${COMPANION_NAME} can text them directly.`,
+      })
+    }
 
     if (guardianPhone) {
       await db.update(users).set({ phone: guardianPhone }).where(eq(users.id, request.userId))
@@ -113,10 +128,26 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
 
     await assertAccess(request.userId, id, reply)
 
-    const { reminders: reminderTexts, facts, ...fields } = parse.data
+    const { reminders: reminderTexts, facts, pauseDays, ...fields } = parse.data
 
     if (Object.keys(fields).length) {
       await db.update(parents).set(fields as Partial<typeof parents.$inferInsert>).where(eq(parents.id, id))
+    }
+
+    if (pauseDays !== undefined) {
+      if (!pauseDays) {
+        await db.update(parents)
+          .set({ pausedUntil: null, pausedAt: null, pauseReminderSentAt: null })
+          .where(eq(parents.id, id))
+      } else {
+        await db.update(parents)
+          .set({
+            pausedUntil: new Date(Date.now() + pauseDays * 86_400_000),
+            pausedAt: new Date(),
+            pauseReminderSentAt: null,
+          })
+          .where(eq(parents.id, id))
+      }
     }
 
     return reply.status(200).send({ ok: true })

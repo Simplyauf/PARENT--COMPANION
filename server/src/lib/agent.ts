@@ -4,7 +4,7 @@
 
 import { db } from '../db/index.js'
 import { activityLogs, companionFacts, reminders, scheduledActions } from '../db/schema.js'
-import { eq, desc, and, ne } from 'drizzle-orm'
+import { eq, desc, and, ne, isNull, inArray } from 'drizzle-orm'
 import { groqChat, COMPANION_NAME, type ChatMessage, type ToolDef, type ToolCall } from './llm.js'
 import { sendMessage, sendReaction, type ReactionType } from './claw.js'
 
@@ -25,7 +25,7 @@ const tools: ToolDef[] = [
     type: 'function',
     function: {
       name: 'save_fact',
-      description: 'Remember a lasting personal detail they mentioned (a name, a hobby, a health condition, a pet, a routine). Use whenever you learn something worth remembering long-term.',
+      description: 'Remember a LASTING personal detail: a person\'s name, a hobby, a health condition, a pet, a routine, a preference. NEVER use for temporary situations or ongoing events (a delayed payment, a pending repair, this week\'s errand) — those are schedule_followup material, not permanent memory.',
       parameters: {
         type: 'object',
         properties: {
@@ -71,10 +71,19 @@ async function executeTool(parentId: string, call: ToolCall): Promise<string> {
   const args = JSON.parse(call.function.arguments || '{}')
 
   switch (call.function.name) {
-    case 'save_fact':
+    case 'save_fact': {
+      // Dedupe: the model sometimes re-saves what it already knows
+      const norm = (s: string) => s.trim().toLowerCase()
+      const existing = await db.query.companionFacts.findMany({
+        where: eq(companionFacts.parentId, parentId),
+      })
+      if (existing.some(f => norm(f.label) === norm(args.label) && norm(f.value) === norm(args.value))) {
+        return `You already know this — no need to save it again.`
+      }
       await db.insert(companionFacts).values({ parentId, label: args.label, value: args.value })
       console.log(`[agent] saved fact: ${args.label} = ${args.value}`)
       return `Saved. You'll remember this from now on.`
+    }
 
     case 'create_reminder':
       await db.insert(reminders).values({ parentId, text: args.text })
@@ -82,6 +91,15 @@ async function executeTool(parentId: string, call: ToolCall): Promise<string> {
       return `Reminder created.`
 
     case 'schedule_followup': {
+      // Don't stack commitments — one conversation shouldn't spawn a pile of
+      // pings about the same thing (isNull import at top covers pending check)
+      const pending = await db.query.scheduledActions.findMany({
+        where: and(eq(scheduledActions.parentId, parentId), isNull(scheduledActions.completedAt)),
+      })
+      if (pending.length >= 2) {
+        console.log(`[agent] follow-up NOT scheduled (already ${pending.length} pending): ${args.topic}`)
+        return `Not scheduled — you already have ${pending.length} follow-ups pending for them. Don't over-promise.`
+      }
       const dueAt = new Date(Date.now() + Number(args.hours_from_now) * 60 * 60 * 1000)
       await db.insert(scheduledActions).values({ parentId, topic: args.topic, dueAt })
       console.log(`[agent] scheduled follow-up in ${args.hours_from_now}h: ${args.topic}`)
@@ -95,17 +113,19 @@ async function executeTool(parentId: string, call: ToolCall): Promise<string> {
 
 // ─── Persona ──────────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(parent: Parent, facts: string, remindersText: string, localTime: string) {
+function buildSystemPrompt(parent: Parent, facts: string, remindersText: string, localTime: string, pendingFollowups: string) {
   return `You are ${COMPANION_NAME} — a warm, genuine friend who checks in on ${parent.name} by text message. You text like a real person, never like a bot or customer service. If they ask who you are, you're ${COMPANION_NAME}, a friend their family asked to keep them company.
 
 HOW YOU TEXT:
 - Short. 1–2 sentences, like a real text message. Never lists, never headers, never formal sign-offs.
 - Warm and natural: contractions, casual phrasing. An emoji here and there is fine, not every message.
-- Reference what you know about them naturally, the way a friend who remembers would.
+- Reference what you know about them naturally, the way a friend who remembers would. Recall like a HUMAN, not a database: "how's that knee doing? you mentioned it was bothering you the other day" — NEVER exact dates, times, or precise quotes of what they said. Perfect recall is creepy; warm, slightly fuzzy recall is a friend.
 - Ask at most one gentle question per message. Don't interrogate.
 - NEVER say you're an AI, an assistant, or "here to help". Never use phrases like "How may I assist you", "I understand that", "It's important to". Just talk like a person who cares.
 - Reply in the language THEY use. If they write or speak Yoruba, Hausa, Igbo, pidgin, or anything else, reply naturally in that same language.
 - If they mention something happening later (appointment, visit, repair), use schedule_followup so you can ask about it afterwards — that's what a good friend does.
+- If you asked about something before and they ignored it or changed the subject, let it go — never drag them back to a topic they didn't engage with. Conversations move forward.
+- SCAM PROTECTION: if they mention anyone asking for money, bank details, card numbers, OTP/verification codes, gift cards, a "locked account" call, a prize win, or urgent payment pressure — your FIRST priority is gently but firmly urging them not to send anything, share any code, or click any link until family confirms it's real ("please don't send them anything yet — let's have your family double-check first, these things are often fake"). Stay calm and warm, never alarmist. Their family is alerted automatically; you don't need to mention that unless it reassures them.
 - If they mention a lasting personal detail, use save_fact so you never forget it.
 - If they mention a medication or recurring thing to track, use create_reminder.
 
@@ -115,9 +135,13 @@ ${facts}
 THINGS YOU'RE KEEPING TRACK OF:
 ${remindersText}
 
+FOLLOW-UPS YOU'VE ALREADY PROMISED (do NOT schedule another one about these topics):
+${pendingFollowups}
+
 It's currently ${localTime} where they are. After using any tools, always end with your text reply to them.
 
-BEFORE every reply, check: did they mention a lasting detail that is NOT already in WHAT YOU KNOW above? (a project like furnishing a new home, a health issue, family names, their job situation, routines.) If yes, call save_fact for each one — you can call several tools in one turn, e.g. save_fact twice AND schedule_followup. A friend who forgets everything isn't a friend.
+BEFORE every reply, check: did they mention a lasting detail that is NOT already in WHAT YOU KNOW above? (a health condition, family names, a hobby, where they worship, routines.) If yes, call save_fact for each one — you can call several tools in one turn, e.g. save_fact twice AND schedule_followup. A friend who forgets everything isn't a friend.
+But know the difference: FACTS are who they are (durable). SITUATIONS are what's happening this week (a late salary, a repair, an errand) — situations get schedule_followup, NEVER save_fact. A situation saved as a fact becomes embarrassing stale memory later.
 
 CRITICAL: your message text is sent to their phone EXACTLY as written. Tools work ONLY through the tool-calling interface — NEVER write tool names, XML tags like <schedule_followup>, JSON, or code of any kind inside your message text. If you want to use a tool, call it properly first, then write your plain-English reply.
 
@@ -132,14 +156,20 @@ This taps a reaction on their message like a real person would, without sending 
 // ─── Safety net: Llama sometimes writes tool calls as text instead of using ───
 // the tool API. Extract them, execute the intent, and strip them from the reply.
 
-const LEAKED_TOOL_RE = /<\/?(?:function=)?(save_fact|create_reminder|schedule_followup)[^>]*>\s*(\{[\s\S]*?\})?\s*(?:<\/[^>]*>)?/g
+// Covers every leaked variant seen in the wild:
+//   <schedule_followup>{...}</schedule_followup>
+//   <function=create_reminder={"text": ...}></function>
+//   <function=create_reminder {"text": ...}></function>
+//   <function=create_reminder{"text": ...}>
+const LEAKED_TOOL_RE = /<(?:function=)?\s*(save_fact|create_reminder|schedule_followup)\s*=?\s*(\{[\s\S]*?\})?\s*\/?>\s*(\{[\s\S]*?\})?\s*(?:<\/[^>]*>)?/g
 
 async function sanitizeReply(parentId: string, text: string): Promise<string> {
   let cleaned = text
 
   const matches = [...text.matchAll(LEAKED_TOOL_RE)]
   for (const m of matches) {
-    const [full, name, json] = m
+    const [full, name, jsonInTag, jsonAfterTag] = m
+    const json = jsonInTag ?? jsonAfterTag
     if (json) {
       try {
         await executeTool(parentId, {
@@ -164,6 +194,53 @@ async function sanitizeReply(parentId: string, text: string): Promise<string> {
   return cleaned
 }
 
+// ─── Memory consolidation ─────────────────────────────────────────────────────
+// Facts beyond the 40 most recent leave the prompt window. Rather than letting
+// them pile up, compact them: merge related notes into dense facts, drop stale
+// ones. The compacted facts re-enter the recent window. Called by the heartbeat.
+
+const FACT_WINDOW = 40
+const COMPACT_TRIGGER = 46 // hysteresis so we don't thrash at the boundary
+
+export async function compactFacts(parentId: string): Promise<void> {
+  const all = await db.query.companionFacts.findMany({
+    where: eq(companionFacts.parentId, parentId),
+    orderBy: desc(companionFacts.createdAt),
+  })
+  if (all.length < COMPACT_TRIGGER) return
+
+  const old = all.slice(FACT_WINDOW)
+  const oldText = old.map(f => `- ${f.label}: ${f.value}`).join('\n')
+
+  const msg = await groqChat([
+    {
+      role: 'user',
+      content: `These are older memory notes a companion keeps about an elderly person. Compact them:
+- MERGE related notes into single dense facts (e.g. "Daughter: Kemi" + "Kemi lives in Lagos" → "Daughter: Kemi, lives in Lagos")
+- DROP anything that was a temporary situation, one-time event, or is likely stale by now
+- KEEP only durable personal knowledge: people, health conditions, preferences, routines, faith, places
+
+Notes:
+${oldText}
+
+Return JSON: {"facts": [{"label": "...", "value": "..."}]} with AT MOST ${Math.max(1, Math.ceil(old.length / 3))} facts. Respond with only valid JSON.`,
+    },
+  ], { jsonMode: true, temperature: 0.2 })
+
+  const parsed = JSON.parse(msg.content ?? '{}') as { facts?: { label: string; value: string }[] }
+  if (!Array.isArray(parsed.facts)) return
+
+  if (parsed.facts.length) {
+    await db.insert(companionFacts).values(
+      parsed.facts
+        .filter(f => f.label && f.value)
+        .map(f => ({ parentId, label: String(f.label), value: String(f.value) }))
+    )
+  }
+  await db.delete(companionFacts).where(inArray(companionFacts.id, old.map(f => f.id)))
+  console.log(`[memory] compacted ${old.length} older facts → ${parsed.facts.length} for parent ${parentId}`)
+}
+
 // ─── Conversation history from activity logs ──────────────────────────────────
 
 async function buildHistory(parentId: string, excludeLogId?: string): Promise<ChatMessage[]> {
@@ -186,14 +263,23 @@ async function buildHistory(parentId: string, excludeLogId?: string): Promise<Ch
 // ─── The agent turn ───────────────────────────────────────────────────────────
 
 export async function runAgentTurn(parent: Parent, inboundText: string, excludeLogId?: string, inboundMessageId?: string): Promise<string | null> {
-  const [facts, parentReminders, history] = await Promise.all([
-    db.query.companionFacts.findMany({ where: eq(companionFacts.parentId, parent.id) }),
+  const [facts, parentReminders, history, pendingActions] = await Promise.all([
+    // Cap what goes into the prompt — unbounded memory dilutes attention
+    db.query.companionFacts.findMany({
+      where: eq(companionFacts.parentId, parent.id),
+      orderBy: desc(companionFacts.createdAt),
+      limit: 40,
+    }),
     db.query.reminders.findMany({ where: eq(reminders.parentId, parent.id) }),
     buildHistory(parent.id, excludeLogId),
+    db.query.scheduledActions.findMany({
+      where: and(eq(scheduledActions.parentId, parent.id), isNull(scheduledActions.completedAt)),
+    }),
   ])
 
   const factsText = facts.map(f => `- ${f.label}: ${f.value}`).join('\n') || '- Nothing yet — you\'re still getting to know them.'
   const remindersText = parentReminders.map(r => `- ${r.text}`).join('\n') || '- Nothing yet.'
+  const pendingText = pendingActions.map(a => `- ${a.topic}`).join('\n') || '- None.'
 
   const localTime = new Intl.DateTimeFormat('en-US', {
     timeZone: parent.timezone,
@@ -203,7 +289,7 @@ export async function runAgentTurn(parent: Parent, inboundText: string, excludeL
   }).format(new Date())
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt(parent, factsText, remindersText, localTime) },
+    { role: 'system', content: buildSystemPrompt(parent, factsText, remindersText, localTime, pendingText) },
     ...history,
     { role: 'user', content: inboundText },
   ]

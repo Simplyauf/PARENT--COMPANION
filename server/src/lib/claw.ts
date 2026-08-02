@@ -2,7 +2,7 @@ import WebSocket from 'ws'
 import { db } from '../db/index.js'
 import { parents, activityLogs, guardianParentLinks } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
-import { analyzeTranscript } from './llm.js'
+import { analyzeTranscript, COMPANION_NAME } from './llm.js'
 import { dispatchAlert } from './notifications.js'
 import { runAgentTurn } from './agent.js'
 import { transcribeVoiceNote } from './voice.js'
@@ -99,6 +99,11 @@ async function handleMessage(msg: Record<string, unknown>) {
       return
     }
 
+    // They replied — clear any unresponsiveness escalation state
+    if (parent.noReplyAlertedAt) {
+      await db.update(parents).set({ noReplyAlertedAt: null }).where(eq(parents.id, parent.id))
+    }
+
     // Voice notes: transcribe and treat like typed text
     const audioAttachments = attachments.filter(a => a.mimeType?.startsWith('audio/'))
     for (const audio of audioAttachments) {
@@ -144,7 +149,9 @@ async function handleMessage(msg: Record<string, unknown>) {
             guardianPhone: l.guardian.phone ?? undefined,
             notifyVia: l.notifyVia,
             parentName: l.parent.name,
-            summary: analysis.summary,
+            summary: analysis.scam
+              ? `Possible SCAM targeting them — ${analysis.summary} ${COMPANION_NAME} has warned them not to send anything; a personal call would help.`
+              : analysis.summary,
             isEmergency: analysis.emergency === true,
           })
         )

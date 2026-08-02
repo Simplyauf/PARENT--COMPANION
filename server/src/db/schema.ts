@@ -28,6 +28,12 @@ export const parents = pgTable('parents', {
   activeHoursFrom: time('active_hours_from').notNull().default('09:00'),
   activeHoursTo: time('active_hours_to').notNull().default('20:00'),
   isActive: boolean('is_active').notNull().default(true),
+  // Guardian-initiated pause: Mae (COMPANION_NAME) stops initiating (still replies) until this passes
+  pausedUntil: timestamp('paused_until'),
+  pausedAt: timestamp('paused_at'),
+  pauseReminderSentAt: timestamp('pause_reminder_sent_at'),
+  // Set once guardians have been alerted about an unanswered-message streak
+  noReplyAlertedAt: timestamp('no_reply_alerted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

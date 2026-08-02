@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
       manifest: {
-        name: 'Companion',
-        short_name: 'Companion',
+        name: 'MaeMate',
+        short_name: 'MaeMate',
         description: 'Peace of mind, one call away. An AI companion that checks in on your loved ones.',
         theme_color: '#1B4D3E',
         background_color: '#F7F5F0',

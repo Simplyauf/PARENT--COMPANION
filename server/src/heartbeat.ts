@@ -1,11 +1,17 @@
 import { db } from './db/index.js'
-import { activityLogs, parents, companionFacts, reminders, scheduledActions } from './db/schema.js'
-import { eq, and, gte, lte, isNull, type InferSelectModel } from 'drizzle-orm'
+import { activityLogs, parents, companionFacts, reminders, scheduledActions, guardianParentLinks } from './db/schema.js'
+import { eq, and, gte, lte, lt, isNull, desc, type InferSelectModel } from 'drizzle-orm'
 import { decideHeartbeat, groqChat, COMPANION_NAME } from './lib/llm.js'
-import { sendIMessageCheckin } from './lib/notifications.js'
+import { sendIMessageCheckin, dispatchAlert } from './lib/notifications.js'
+import { compactFacts } from './lib/agent.js'
 
 const HEARTBEAT_INTERVAL_MS = 45 * 60 * 1000 // 45 minutes
 const MAX_CONTACTS_PER_DAY = 3
+const FOLLOWUP_EXPIRY_MS = 48 * 60 * 60 * 1000   // stale follow-ups die after 48h overdue
+const NO_REPLY_STREAK = 3                         // stop initiating after 3 unanswered messages
+const GUARDIAN_ALERT_AFTER_H = 12                 // hours of silence after 3rd msg → tell guardians
+const RETRY_AFTER_H = 72                          // days of silence before one gentle re-attempt
+const PAUSE_REMINDER_AFTER_MS = 4 * 24 * 60 * 60 * 1000
 
 async function tick() {
   console.log(`[heartbeat] tick at ${new Date().toISOString()}`)
@@ -24,36 +30,67 @@ async function tick() {
       .filter(p => !followedUp.has(p.id)) // just messaged them — don't double-text
       .map(processParent)
   )
+
+  // Memory maintenance: compact facts that have drifted out of the prompt window
+  for (const p of allParents) {
+    compactFacts(p.id).catch(err => console.error('[memory] compaction failed:', (err as Error).message))
+  }
 }
 
 // ─── Execute due follow-ups the agent scheduled for itself ───────────────────
 
 async function runDueFollowups(): Promise<Set<string>> {
+  const now = new Date()
+
+  // A follow-up that's been overdue for 2+ days is about a moment that has
+  // passed — asking about it now would feel weird and pushy. Let it die.
+  const expired = await db.update(scheduledActions)
+    .set({ completedAt: now })
+    .where(and(
+      isNull(scheduledActions.completedAt),
+      lt(scheduledActions.dueAt, new Date(now.getTime() - FOLLOWUP_EXPIRY_MS))
+    ))
+    .returning()
+  if (expired.length) console.log(`[heartbeat] expired ${expired.length} stale follow-up(s)`)
+
   const due = await db.query.scheduledActions.findMany({
-    where: and(isNull(scheduledActions.completedAt), lte(scheduledActions.dueAt, new Date())),
+    where: and(isNull(scheduledActions.completedAt), lte(scheduledActions.dueAt, now)),
     with: { parent: true },
   })
 
+  // One message per parent per tick — if several follow-ups are due at once
+  // (e.g. after downtime), merge them instead of machine-gunning texts
+  const byParent = new Map<string, typeof due>()
+  for (const action of due) {
+    const list = byParent.get(action.parentId) ?? []
+    list.push(action)
+    byParent.set(action.parentId, list)
+  }
+
   const messaged = new Set<string>()
 
-  for (const action of due) {
+  for (const [parentId, actions] of byParent) {
+    const parent = actions[0].parent
+    if (parent.pausedUntil && parent.pausedUntil > now) continue // paused — hold, expiry will clean up
+
+    const topics = actions.map(a => a.topic).join('; ')
     try {
       const msg = await groqChat([
         {
           role: 'user',
-          content: `You are ${COMPANION_NAME}, a warm friend texting ${action.parent.name}, an elderly person you check in on. Earlier you promised yourself to follow up about: "${action.topic}".
+          content: `You are ${COMPANION_NAME}, a warm friend texting ${parent.name}, an elderly person you check in on. Earlier you promised yourself to follow up about: "${topics}".
 
-Write that follow-up text now — 1–2 sentences, casual and caring like a real friend texting, never robotic. Reply with ONLY the text message, nothing else.`,
+Write ONE follow-up text now covering ${actions.length > 1 ? 'these (they overlap — weave them into one natural question, do not list them)' : 'that'} — 1–2 sentences, casual and caring like a real friend texting, never robotic. Reply with ONLY the text message, nothing else.`,
         },
       ], { temperature: 0.8 })
 
       const text = msg.content?.trim()
       if (!text) continue
 
-      await sendIMessageCheckin(action.parent.phone, text)
+      await sendIMessageCheckin(parent.phone, text)
 
       await db.insert(activityLogs).values({
-        parentId: action.parentId,
+        parentId,
         type: 'message',
         direction: 'outbound',
         summary: `Follow-up: "${text.slice(0, 120)}"`,
@@ -61,14 +98,16 @@ Write that follow-up text now — 1–2 sentences, casual and caring like a real
         rawTranscript: text,
       })
 
-      await db.update(scheduledActions)
-        .set({ completedAt: new Date() })
-        .where(eq(scheduledActions.id, action.id))
+      for (const action of actions) {
+        await db.update(scheduledActions)
+          .set({ completedAt: new Date() })
+          .where(eq(scheduledActions.id, action.id))
+      }
 
-      messaged.add(action.parentId)
-      console.log(`[heartbeat] follow-up sent to ${action.parent.name}: ${action.topic}`)
+      messaged.add(parentId)
+      console.log(`[heartbeat] follow-up sent to ${parent.name}: ${topics}`)
     } catch (err) {
-      console.error(`[heartbeat] follow-up failed for ${action.parent.name}:`, (err as Error).message)
+      console.error(`[heartbeat] follow-up failed for ${parent.name}:`, (err as Error).message)
     }
   }
 
@@ -82,6 +121,22 @@ type ParentWithContext = InferSelectModel<typeof parents> & {
 
 async function processParent(parent: ParentWithContext) {
   const now = new Date()
+
+  // Guardian paused Mae for this parent — no initiations (replies still work).
+  // After 4 days paused, remind guardians once that they can unpause.
+  if (parent.pausedUntil && parent.pausedUntil > now) {
+    if (
+      parent.pausedAt &&
+      !parent.pauseReminderSentAt &&
+      now.getTime() - parent.pausedAt.getTime() >= PAUSE_REMINDER_AFTER_MS
+    ) {
+      const days = Math.round((now.getTime() - parent.pausedAt.getTime()) / 86_400_000)
+      await alertGuardians(parent.id, parent.name,
+        `${COMPANION_NAME}'s messages to ${parent.name} have been paused for ${days} days now. You can resume them anytime from the dashboard.`)
+      await db.update(parents).set({ pauseReminderSentAt: now }).where(eq(parents.id, parent.id))
+    }
+    return
+  }
 
   const localTime = new Intl.DateTimeFormat('en-US', {
     timeZone: parent.timezone,
@@ -133,6 +188,40 @@ async function processParent(parent: ParentWithContext) {
     l => l.direction === 'outbound' && !l.summary.startsWith('Replied:')
   ).length
 
+  // Don't-pester policy: count consecutive outbound messages since their last
+  // reply. At 3 unanswered we stop initiating; 12h later guardians get a heads-up;
+  // after 3 days of silence one gentle, zero-pressure re-attempt is allowed.
+  const recentLogs = await db.query.activityLogs.findMany({
+    where: eq(activityLogs.parentId, parent.id),
+    orderBy: desc(activityLogs.createdAt),
+    limit: 10,
+  })
+  let unanswered = 0
+  let lastOutboundAt: Date | null = null
+  for (const l of recentLogs) {
+    if (l.direction === 'inbound') break
+    unanswered++
+    if (!lastOutboundAt) lastOutboundAt = l.createdAt
+  }
+
+  if (unanswered >= NO_REPLY_STREAK && lastOutboundAt) {
+    const hoursSilent = (now.getTime() - lastOutboundAt.getTime()) / 3_600_000
+
+    if (hoursSilent >= GUARDIAN_ALERT_AFTER_H && !parent.noReplyAlertedAt) {
+      const alerted = await alertGuardians(parent.id, parent.name,
+        `${parent.name} hasn't responded to ${COMPANION_NAME}'s last ${unanswered} messages. Might be worth checking in personally.`)
+      if (alerted) {
+        await db.update(parents).set({ noReplyAlertedAt: now }).where(eq(parents.id, parent.id))
+      }
+    }
+
+    if (hoursSilent < RETRY_AFTER_H) {
+      console.log(`[heartbeat] ${parent.name} — ${unanswered} unanswered messages, backing off (${Math.round(hoursSilent)}h silent)`)
+      return
+    }
+    // 3+ days silent: fall through and let the model send one gentle check-in
+  }
+
   const decision = await decideHeartbeat({
     parentName: parent.name,
     currentTime: new Intl.DateTimeFormat('en-US', {
@@ -148,6 +237,7 @@ async function processParent(parent: ParentWithContext) {
     todayLogs: logsForContext,
     facts: parent.companionFacts.map(f => ({ label: f.label, value: f.value })),
     reminders: parent.reminders.map(r => r.text),
+    unansweredStreak: unanswered,
   })
 
   console.log(`[heartbeat] ${parent.name}: ${decision.action} — ${decision.reason}`)
@@ -158,10 +248,35 @@ async function processParent(parent: ParentWithContext) {
     await db.insert(activityLogs).values({
       parentId: parent.id,
       type: 'message',
+      direction: 'outbound',
       summary: `Sent: "${decision.messageText}"`,
       sentiment: 'neutral',
+      rawTranscript: decision.messageText,
     })
   }
+}
+
+// Notify every guardian of a parent (respecting each one's channel preference).
+// Returns false when the parent has no guardians — nothing is sent to anyone.
+async function alertGuardians(parentId: string, parentName: string, summary: string): Promise<boolean> {
+  const links = await db.query.guardianParentLinks.findMany({
+    where: eq(guardianParentLinks.parentId, parentId),
+    with: { guardian: true },
+  })
+  if (!links.length) return false
+
+  for (const link of links) {
+    await dispatchAlert({
+      guardianEmail: link.guardian.email,
+      guardianPhone: link.guardian.phone ?? undefined,
+      notifyVia: link.notifyVia,
+      parentName,
+      summary,
+      isEmergency: false,
+    }).catch(err => console.error('[heartbeat] guardian alert failed:', (err as Error).message))
+  }
+  console.log(`[heartbeat] notified ${links.length} guardian(s) about ${parentName}`)
+  return true
 }
 
 export function startHeartbeat() {

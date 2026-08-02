@@ -40,7 +40,7 @@ export default function Activate() {
 
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-1.5 text-[#6B7280] text-sm mb-8 hover:text-[#1A1A1A] transition-colors"
+          className="flex items-center gap-1.5 text-[#646D7A] text-sm mb-8 hover:text-[#1A1A1A] transition-colors"
         >
           <ArrowLeft size={16} />
           Back
@@ -56,8 +56,8 @@ export default function Activate() {
           >
             Say hello to {firstName ?? 'your parent'}
           </h2>
-          <p className="text-[#6B7280] text-sm leading-relaxed">
-            Deera — {firstName ? `${firstName}'s` : 'their'} AI companion — sends the first text. {firstName ?? 'Your parent'} doesn't have to do anything but reply.
+          <p className="text-[#646D7A] text-sm leading-relaxed">
+            Mae — {firstName ? `${firstName}'s` : 'their'} AI companion — sends the first text. {firstName ?? 'Your parent'} doesn't have to do anything but reply.
           </p>
         </div>
 
@@ -65,8 +65,8 @@ export default function Activate() {
         <div className="bg-white border border-[#E5E1D8] rounded-2xl p-6 mb-6">
           <div className="flex flex-col gap-3">
             {[
-              { step: '1', text: 'Tap the button — Deera texts them a warm hello right now' },
-              { step: '2', text: `A message from Deera (${formatPhone(AGENT_PHONE)}) arrives on their phone` },
+              { step: '1', text: 'Tap the button — Mae texts them a warm hello right now' },
+              { step: '2', text: `A message from Mae (${formatPhone(AGENT_PHONE)}) arrives on their phone` },
               { step: '3', text: 'They just reply — the friendship begins from there' },
             ].map(({ step, text }) => (
               <div key={step} className="flex items-start gap-3">
@@ -118,16 +118,16 @@ export default function Activate() {
 
         <button
           onClick={() => navigate('/dashboard')}
-          className="w-full text-[#6B7280] text-sm py-2 hover:text-[#1A1A1A] transition-colors"
+          className="w-full text-[#646D7A] text-sm py-2 hover:text-[#1A1A1A] transition-colors"
         >
           Skip for now — I'll do this later
         </button>
 
         <div className="mt-6 bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-3">
-          <p className="text-xs text-[#6B7280] leading-relaxed">
+          <p className="text-xs text-[#646D7A] leading-relaxed">
             <span className="font-medium text-[#1A1A1A]">Good to know:</span> {firstName ?? 'your parent'} should
-            always <span className="font-medium text-[#1A1A1A]">reply in Companion's message thread</span>.
-            Starting a brand-new conversation may not reach Companion if their iMessage is set to send
+            always <span className="font-medium text-[#1A1A1A]">reply in Mae's message thread</span>.
+            Starting a brand-new conversation may not reach Mae if their iMessage is set to send
             from an email address instead of their phone number.
           </p>
         </div>

@@ -74,12 +74,12 @@ export const guardianRoutes: FastifyPluginAsync = async (fastify) => {
     if (!resend) return reply.status(503).send({ error: 'Email not configured' })
 
     await resend.emails.send({
-      from: 'Companion <invites@companion.app>',
+      from: process.env.EMAIL_FROM ?? 'MaeMate <invites@maemate.app>',
       to: email,
-      subject: "You've been invited to Companion",
+      subject: "You've been invited to MaeMate",
       html: `
         <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background: #F7F5F0;">
-          <p style="font-family: Georgia, serif; font-size: 24px; color: #1B4D3E; margin: 0 0 16px;">You're invited to Companion</p>
+          <p style="font-family: Georgia, serif; font-size: 24px; color: #1B4D3E; margin: 0 0 16px;">You're invited to MaeMate</p>
           <p style="color: #1A1A1A; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
             Someone has added you as a co-guardian. You'll receive updates about your loved one via ${notifyVia === 'gmail' ? 'Gmail' : 'iMessage'}.
           </p>

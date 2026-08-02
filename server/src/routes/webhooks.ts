@@ -26,7 +26,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify) => {
     // Only run Gemini analysis on inbound replies from the senior
     const analysis = direction === 'inbound'
       ? await analyzeTranscript(text)
-      : { summary: text, sentiment: 'neutral' as const, emergency: false }
+      : { summary: text, sentiment: 'neutral' as const, emergency: false, scam: false }
 
     await db.insert(activityLogs).values({
       parentId,

@@ -10,10 +10,21 @@ import {
   getParents, getParent, getActivity, getGuardians, getWeeklySummary,
   addFact as apiAddFact, deleteFact, addReminder as apiAddReminder, deleteReminder,
   updateParent, updateSchedule, inviteGuardian, removeGuardian as apiRemoveGuardian,
-  requestCheckin,
+  requestCheckin, ApiError,
   type ApiParent, type ApiFact, type ApiReminder, type ApiLogEntry,
   type ApiGuardian, type ApiWeeklySummary,
 } from '../lib/api'
+
+// Subtle texture on the deep-green body: a faint dot grid + a soft top glow
+const greenTexture: React.CSSProperties = {
+  backgroundColor: '#1A3A31',
+  backgroundImage: [
+    'radial-gradient(ellipse 85% 55% at 50% -10%, rgba(247,245,240,0.14), transparent 65%)',
+    'radial-gradient(ellipse 70% 50% at 105% 100%, rgba(94,141,124,0.25), transparent 60%)',
+    'radial-gradient(rgba(247,245,240,0.11) 1.2px, transparent 1.9px)',
+  ].join(', '),
+  backgroundSize: 'auto, auto, 24px 24px',
+}
 
 type Tab = 'overview' | 'activity' | 'settings'
 
@@ -63,6 +74,7 @@ export default function Dashboard() {
   const [newValue, setNewValue] = useState('')
   const [addingFact, setAddingFact] = useState(false)
   const [checkinState, setCheckinState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [pauseBusy, setPauseBusy] = useState(false)
 
   const [activity, setActivity] = useState<ApiLogEntry[]>([])
 
@@ -89,6 +101,20 @@ export default function Dashboard() {
   const [inviteError, setInviteError] = useState<string | null>(null)
 
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [sessionExpired, setSessionExpired] = useState(false)
+  const [redirectIn, setRedirectIn] = useState(5)
+
+  // Session-expired card: count down 5s, then off to sign-in
+  useEffect(() => {
+    if (!sessionExpired) return
+    const timer = setInterval(() => {
+      setRedirectIn(s => {
+        if (s <= 1) { clearInterval(timer); navigate('/auth') }
+        return s - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [sessionExpired, navigate])
 
   const currentParent = parents?.find(p => p.id === currentParentId) ?? parents?.[0] ?? null
 
@@ -105,6 +131,12 @@ export default function Dashboard() {
         setParents(list)
         setCurrentParentId(list[0].id)
       } catch (err) {
+        // Stale/expired session — show the expiry card, then send to sign-in
+        if (err instanceof ApiError && err.status === 401) {
+          await supabase.auth.signOut()
+          setSessionExpired(true)
+          return
+        }
         setLoadError((err as Error).message)
       }
     })()
@@ -167,6 +199,20 @@ export default function Dashboard() {
       setNewLabel(''); setNewValue(''); setAddingFact(false)
     } catch (err) {
       setLoadError((err as Error).message)
+    }
+  }
+
+  const handlePause = async (days: number) => {
+    if (!currentParent || pauseBusy) return
+    setPauseBusy(true)
+    try {
+      await updateParent(currentParent.id, { pauseDays: days })
+      const list = await getParents()
+      setParents(list)
+    } catch (err) {
+      setLoadError((err as Error).message)
+    } finally {
+      setPauseBusy(false)
     }
   }
 
@@ -255,43 +301,74 @@ export default function Dashboard() {
     { id: 'settings', label: 'Settings', icon: Settings },
   ]
 
+  // ─── Session expired ─────────────────────────────────────────────────────────
+  if (sessionExpired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={greenTexture}>
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="w-12 h-12 rounded-full bg-[#1B4D3E]/10 flex items-center justify-center mx-auto mb-4">
+            <Clock size={22} className="text-[#1B4D3E]" />
+          </div>
+          <h2 className="text-xl text-[#1A1A1A] mb-2" style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}>
+            Session expired
+          </h2>
+          <p className="text-sm text-[#646D7A] mb-6">
+            For your security, you've been signed out. Taking you back to sign-in in {redirectIn}s…
+          </p>
+          <button
+            onClick={() => navigate('/auth')}
+            className="w-full bg-[#1B4D3E] text-white rounded-xl py-3 text-sm font-medium hover:bg-[#2D6A56] transition-colors"
+          >
+            Sign in now
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ─── Loading / error states ──────────────────────────────────────────────────
   if (!parents || !currentParent) {
     return (
-      <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={greenTexture}>
         {loadError ? (
           <div className="text-center px-6">
-            <AlertCircle size={24} className="text-[#DC2626] mx-auto mb-3" />
-            <p className="text-sm text-[#1A1A1A] mb-1">Couldn't load your dashboard</p>
-            <p className="text-xs text-[#6B7280]">{loadError}</p>
+            <AlertCircle size={24} className="text-[#F87171] mx-auto mb-3" />
+            <p className="text-sm text-white mb-1">Couldn't load your dashboard</p>
+            <p className="text-xs text-[#B8C5BE]">{loadError}</p>
           </div>
         ) : (
-          <p className="text-sm text-[#6B7280] animate-pulse">Loading Companion…</p>
+          <p className="text-sm text-[#B8C5BE] animate-pulse">Loading MaeMate…</p>
         )}
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F5F0]">
+    <div className="min-h-screen" style={greenTexture}>
+
+      {/* Brand watermark — giant faint interlocking rings, desktop only */}
+      <div aria-hidden className="pointer-events-none fixed -left-56 top-32 hidden lg:flex opacity-[0.05]">
+        <div className="w-[520px] h-[520px] rounded-full border-[52px] border-[#F7F5F0]" />
+        <div className="w-[520px] h-[520px] rounded-full border-[52px] border-[#F7F5F0] -ml-44" />
+      </div>
 
       {/* Header */}
       <header className="bg-white border-b border-[#E5E1D8] px-4 py-3 sticky top-0 z-10">
-        <div className="max-w-lg mx-auto">
+        <div className="max-w-lg lg:max-w-2xl mx-auto">
 
           {/* Row 1: logo + tabs (tabs hidden on mobile) */}
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[#1B4D3E] text-lg" style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}>
-              Companion
-            </p>
+          <div className="flex items-center justify-between">
+            <img src="/logo_3.png" alt="MaeMate" width={400} height={139} className="h-8 w-auto rounded" />
+
+
             {/* Desktop tabs — hidden below sm */}
             <div className="hidden sm:flex items-center gap-1 bg-[#F7F5F0] rounded-xl p-1">
               {tabs.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
                   onClick={() => setTab(id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    tab === id ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#6B7280] hover:text-[#1A1A1A]'
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B4D3E]/50 ${
+                    tab === id ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#646D7A] hover:text-[#1A1A1A]'
                   }`}
                 >
                   <Icon size={13} />
@@ -301,18 +378,22 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Row 2: parent switcher */}
+        </div>
+      </header>
+
+      {/* Parent switcher — floats on the green */}
+      <div className="max-w-lg lg:max-w-2xl mx-auto px-4 pt-5">
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setParentDropdownOpen(o => !o)}
-              className="flex items-center gap-2 bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2 hover:border-[#1B4D3E] transition-colors w-full"
+              className="flex items-center gap-2 bg-white rounded-xl px-4 py-2.5 shadow-sm hover:ring-2 hover:ring-white/30 transition-all w-full"
             >
               <span className="w-2 h-2 rounded-full bg-[#059669] flex-shrink-0" />
               <span className="text-sm font-medium text-[#1A1A1A] flex-1 text-left">
                 {currentParent.name}
               </span>
-              <span className="text-xs text-[#6B7280]">{parents.length} parent{parents.length !== 1 ? 's' : ''}</span>
-              <ChevronDown size={14} className={`text-[#6B7280] transition-transform ${parentDropdownOpen ? 'rotate-180' : ''}`} />
+              <span className="text-xs text-[#646D7A]">{parents.length} parent{parents.length !== 1 ? 's' : ''}</span>
+              <ChevronDown size={14} className={`text-[#646D7A] transition-transform ${parentDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {parentDropdownOpen && (
@@ -325,10 +406,10 @@ export default function Dashboard() {
                       parent.id === currentParentId ? 'bg-[#F7F5F0]' : ''
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${parent.isActive ? 'bg-[#059669]' : 'bg-[#6B7280]'}`} />
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${parent.isActive ? 'bg-[#059669]' : 'bg-[#646D7A]'}`} />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-[#1A1A1A]">{parent.name}</p>
-                      <p className="text-xs text-[#6B7280]">Last contact {timeAgo(parent.lastContact)}</p>
+                      <p className="text-xs text-[#646D7A]">Last contact {timeAgo(parent.lastContact)}</p>
                     </div>
                     {parent.id === currentParentId && <Check size={14} className="text-[#1B4D3E]" />}
                   </button>
@@ -338,7 +419,7 @@ export default function Dashboard() {
                     onClick={() => { setParentDropdownOpen(false); navigate('/setup', { state: { role: 'guardian' } }) }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#F7F5F0] transition-colors"
                   >
-                    <div className="w-2 h-2 rounded-full border border-dashed border-[#6B7280] flex-shrink-0" />
+                    <div className="w-2 h-2 rounded-full border border-dashed border-[#646D7A] flex-shrink-0" />
                     <p className="text-sm font-medium text-[#1B4D3E]">Add another parent</p>
                   </button>
                 </div>
@@ -346,16 +427,15 @@ export default function Dashboard() {
             )}
           </div>
 
-        </div>
-      </header>
+      </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6 pb-24 sm:pb-6 flex flex-col gap-4">
+      <div className="max-w-lg lg:max-w-2xl mx-auto px-4 py-6 pb-24 sm:pb-6 flex flex-col gap-4">
 
         {loadError && (
-          <div className="flex items-start gap-2 bg-[#DC2626]/5 border border-[#DC2626]/20 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-2 bg-white border border-[#DC2626]/30 rounded-xl px-4 py-3">
             <AlertCircle size={15} className="text-[#DC2626] flex-shrink-0 mt-0.5" />
             <p className="text-sm text-[#DC2626] flex-1">{loadError}</p>
-            <button onClick={() => setLoadError(null)} className="text-[#6B7280] hover:text-[#1A1A1A]"><X size={14} /></button>
+            <button onClick={() => setLoadError(null)} className="text-[#646D7A] hover:text-[#1A1A1A]"><X size={14} /></button>
           </div>
         )}
 
@@ -364,9 +444,9 @@ export default function Dashboard() {
           <>
             <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
               <div className="flex items-center gap-2 mb-3">
-                <span className={`w-2.5 h-2.5 rounded-full ${currentParent.isActive ? 'bg-[#059669]' : 'bg-[#6B7280]'}`} />
-                <span className={`text-sm font-medium ${currentParent.isActive ? 'text-[#059669]' : 'text-[#6B7280]'}`}>
-                  {currentParent.isActive ? 'Companion Active' : 'Companion Paused'}
+                <span className={`w-2.5 h-2.5 rounded-full ${currentParent.isActive ? 'bg-[#059669]' : 'bg-[#646D7A]'}`} />
+                <span className={`text-sm font-medium ${currentParent.isActive ? 'text-[#059669]' : 'text-[#646D7A]'}`}>
+                  {currentParent.isActive ? 'Mae Active' : 'Mae Paused'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -375,14 +455,14 @@ export default function Dashboard() {
                     {currentParent.name}
                   </p>
                   <div className="flex items-center gap-1.5 mt-1">
-                    <Clock size={13} className="text-[#6B7280]" />
-                    <p className="text-sm text-[#6B7280]">
+                    <Clock size={13} className="text-[#646D7A]" />
+                    <p className="text-sm text-[#646D7A]">
                       Checks in <span className="text-[#1A1A1A] font-medium">{currentParent.activeHoursFrom.slice(0, 5)}–{currentParent.activeHoursTo.slice(0, 5)}</span>
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-[#6B7280]">Last contact</p>
+                  <p className="text-xs text-[#646D7A]">Last contact</p>
                   <p className="text-sm font-medium text-[#1A1A1A] mt-0.5">{timeAgo(currentParent.lastContact)}</p>
                 </div>
               </div>
@@ -390,35 +470,35 @@ export default function Dashboard() {
 
             <button
               onClick={openSummary}
-              className="w-full bg-[#1B4D3E] rounded-2xl p-4 flex items-center justify-between text-left"
+              className="w-full bg-white border border-[#E5E1D8] rounded-2xl p-4 flex items-center justify-between text-left hover:border-[#1B4D3E] transition-colors"
             >
               <div>
-                <p className="text-white text-sm font-medium">Weekly summary</p>
-                <p className="text-white/60 text-xs mt-0.5">How {currentParent.name}'s week has been</p>
+                <p className="text-[#1A1A1A] text-sm font-medium">Weekly summary</p>
+                <p className="text-[#646D7A] text-xs mt-0.5">How {currentParent.name}'s week has been</p>
               </div>
-              <div className="flex items-center gap-1 bg-white/10 text-white text-xs font-medium px-3 py-1.5 rounded-lg">
+              <div className="flex items-center gap-1 bg-[#1B4D3E] text-white text-xs font-medium px-3 py-1.5 rounded-lg">
                 View <ChevronRight size={13} />
               </div>
             </button>
 
             <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
               <div className="mb-4">
-                <p className="font-medium text-[#1A1A1A] text-sm">Companion profile</p>
-                <p className="text-xs text-[#6B7280] mt-0.5">Key facts that help {currentParent.name}'s companion feel personal. The companion also learns these on its own from conversations.</p>
+                <p className="font-medium text-[#1A1A1A] text-sm">Mae's profile</p>
+                <p className="text-xs text-[#646D7A] mt-0.5">Key facts that help {currentParent.name}'s companion feel personal. The companion also learns these on its own from conversations.</p>
               </div>
               <div className="flex flex-col gap-2">
                 {facts.length === 0 && (
-                  <p className="text-xs text-[#6B7280] bg-[#F7F5F0] rounded-xl px-4 py-3">
+                  <p className="text-xs text-[#646D7A] bg-[#F7F5F0] rounded-xl px-4 py-3">
                     Nothing yet — add a fact, or let the companion learn them from conversations.
                   </p>
                 )}
                 {facts.map(fact => (
                   <div key={fact.id} className="flex items-center justify-between bg-[#F7F5F0] rounded-xl px-4 py-2.5 group">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-[#6B7280] w-24 flex-shrink-0">{fact.label}</span>
+                      <span className="text-xs font-medium text-[#646D7A] w-24 flex-shrink-0">{fact.label}</span>
                       <span className="text-sm text-[#1A1A1A]">{fact.value}</span>
                     </div>
-                    <button onClick={() => removeFact(fact.id)} className="opacity-0 group-hover:opacity-100 text-[#6B7280] hover:text-[#DC2626] transition-all">
+                    <button onClick={() => removeFact(fact.id)} className="opacity-0 group-hover:opacity-100 text-[#646D7A] hover:text-[#DC2626] transition-all">
                       <X size={14} />
                     </button>
                   </div>
@@ -426,11 +506,11 @@ export default function Dashboard() {
               </div>
               {addingFact ? (
                 <div className="mt-3 flex flex-col gap-2">
-                  <input type="text" value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="Label (e.g. Hobby)" className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors" />
-                  <input type="text" value={newValue} onChange={e => setNewValue(e.target.value)} placeholder="Value (e.g. Painting)" className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors" />
+                  <input type="text" value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="Label (e.g. Hobby)" className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors" />
+                  <input type="text" value={newValue} onChange={e => setNewValue(e.target.value)} placeholder="Value (e.g. Painting)" className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors" />
                   <div className="flex gap-2">
                     <button onClick={addFact} className="flex-1 text-sm font-medium text-white bg-[#1B4D3E] px-4 py-2.5 rounded-xl hover:bg-[#2D6A56] transition-colors">Add</button>
-                    <button onClick={() => setAddingFact(false)} className="text-sm text-[#6B7280] px-4 py-2.5 hover:text-[#1A1A1A]">Cancel</button>
+                    <button onClick={() => setAddingFact(false)} className="text-sm text-[#646D7A] px-4 py-2.5 hover:text-[#1A1A1A]">Cancel</button>
                   </div>
                 </div>
               ) : (
@@ -442,13 +522,13 @@ export default function Dashboard() {
 
             <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
               <p className="font-medium text-[#1A1A1A] text-sm mb-1">Check in now</p>
-              <p className="text-xs text-[#6B7280] mb-4">Skips the schedule — Companion texts {currentParent.name} right away.</p>
+              <p className="text-xs text-[#646D7A] mb-4">Skips the schedule — Mae texts {currentParent.name} right away.</p>
               <button
                 onClick={handleCheckinNow}
                 disabled={checkinState !== 'idle'}
                 className={`w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-sm font-medium transition-all ${
                   checkinState !== 'idle'
-                    ? 'bg-[#F7F5F0] border border-[#E5E1D8] text-[#6B7280] cursor-not-allowed'
+                    ? 'bg-[#F7F5F0] border border-[#E5E1D8] text-[#646D7A] cursor-not-allowed'
                     : 'bg-[#F7F5F0] border border-[#E5E1D8] text-[#1A1A1A] hover:border-[#1B4D3E] hover:bg-white'
                 }`}
               >
@@ -457,6 +537,45 @@ export default function Dashboard() {
                 {checkinState === 'idle' && <><Phone size={16} /> Send a Check-in Text Now</>}
               </button>
             </div>
+
+            <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
+              {currentParent.pausedUntil && new Date(currentParent.pausedUntil) > new Date() ? (
+                <>
+                  <p className="font-medium text-[#1A1A1A] text-sm mb-1">Mae is paused</p>
+                  <p className="text-xs text-[#646D7A] mb-4">
+                    No check-ins until{' '}
+                    {new Date(currentParent.pausedUntil).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' })}.
+                    Mae still replies if {currentParent.name} texts first.
+                  </p>
+                  <button
+                    onClick={() => handlePause(0)}
+                    disabled={pauseBusy}
+                    className="w-full py-3 rounded-xl text-sm font-medium bg-[#1B4D3E] text-white hover:bg-[#2D6A56] transition-colors disabled:opacity-60"
+                  >
+                    Resume messages now
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-[#1A1A1A] text-sm mb-1">Need a break?</p>
+                  <p className="text-xs text-[#646D7A] mb-3">
+                    Pause Mae's check-ins for a while. Mae will still reply if {currentParent.name} texts first.
+                  </p>
+                  <div className="flex gap-2">
+                    {[{ label: '3 days', days: 3 }, { label: '1 week', days: 7 }, { label: '2 weeks', days: 14 }].map(opt => (
+                      <button
+                        key={opt.days}
+                        onClick={() => handlePause(opt.days)}
+                        disabled={pauseBusy}
+                        className="flex-1 py-2.5 rounded-xl text-xs font-medium bg-[#F7F5F0] border border-[#E5E1D8] text-[#1A1A1A] hover:border-[#1B4D3E] hover:bg-white transition-all disabled:opacity-60"
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </>
         )}
 
@@ -464,12 +583,12 @@ export default function Dashboard() {
         {tab === 'activity' && (
           <div className="flex flex-col gap-3">
             <div>
-              <p className="font-medium text-[#1A1A1A] text-sm">Recent check-ins</p>
-              <p className="text-xs text-[#6B7280] mt-0.5">Every call and message with {currentParent.name}, logged automatically.</p>
+              <p className="font-medium text-[#F7F5F0] text-sm">Recent check-ins</p>
+              <p className="text-xs text-[#B8C5BE] mt-0.5">Every call and message with {currentParent.name}, logged automatically.</p>
             </div>
             {activity.length === 0 && (
               <div className="bg-white border border-[#E5E1D8] rounded-2xl px-5 py-8 text-center">
-                <p className="text-sm text-[#6B7280]">No activity yet — Companion will start checking in soon.</p>
+                <p className="text-sm text-[#646D7A]">No activity yet — Mae will start checking in soon.</p>
               </div>
             )}
             {(() => {
@@ -481,17 +600,17 @@ export default function Dashboard() {
               }, {})
               return Object.entries(grouped).map(([date, entries]) => (
                 <div key={date}>
-                  <p className="text-xs font-medium text-[#6B7280] uppercase tracking-wide mb-2 px-1">{date}</p>
+                  <p className="text-xs font-medium text-[#B8C5BE] uppercase tracking-wide mb-2 px-1">{date}</p>
                   <div className="bg-white border border-[#E5E1D8] rounded-2xl overflow-hidden">
                     {entries.map((entry, i) => (
                       <div key={entry.id} className={`px-5 py-4 flex items-start gap-3 ${i > 0 ? 'border-t border-[#E5E1D8]' : ''}`}>
                         <span className={`w-2 h-2 rounded-full ${sentimentDot[entry.sentiment]} flex-shrink-0 mt-1.5`} />
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
-                            {entry.type === 'call' ? <PhoneCall size={12} className="text-[#6B7280]" /> : <MessageCircle size={12} className="text-[#6B7280]" />}
-                            <span className="text-xs font-medium text-[#6B7280]">{timeLabel(entry.createdAt)}</span>
-                            <span className="text-xs text-[#6B7280] capitalize">
-                              {entry.direction === 'outbound' ? 'Companion' : currentParent.name.split(' ')[0]}
+                            {entry.type === 'call' ? <PhoneCall size={12} className="text-[#646D7A]" /> : <MessageCircle size={12} className="text-[#646D7A]" />}
+                            <span className="text-xs font-medium text-[#646D7A]">{timeLabel(entry.createdAt)}</span>
+                            <span className="text-xs text-[#646D7A] capitalize">
+                              {entry.direction === 'outbound' ? 'Mae' : currentParent.name.split(' ')[0]}
                             </span>
                           </div>
                           <p className="text-sm text-[#1A1A1A] leading-relaxed">{entry.summary}</p>
@@ -509,15 +628,15 @@ export default function Dashboard() {
         {tab === 'settings' && (
           <div className="flex flex-col gap-4">
             <div>
-              <p className="font-medium text-[#1A1A1A] text-sm">Settings</p>
-              <p className="text-xs text-[#6B7280] mt-0.5">Managing {currentParent.name}'s companion.</p>
+              <p className="font-medium text-[#F7F5F0] text-sm">Settings</p>
+              <p className="text-xs text-[#B8C5BE] mt-0.5">Managing {currentParent.name}'s companion.</p>
             </div>
 
             {/* Guardians */}
             <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
               <div className="mb-4">
                 <p className="font-medium text-[#1A1A1A] text-sm">Guardians</p>
-                <p className="text-xs text-[#6B7280] mt-0.5">
+                <p className="text-xs text-[#646D7A] mt-0.5">
                   Everyone who receives updates about {currentParent.name}.
                 </p>
               </div>
@@ -535,22 +654,22 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-[#1A1A1A]">
                           {guardian.name}
-                          {guardian.guardianId === userId && <span className="text-[#6B7280] font-normal"> (you)</span>}
+                          {guardian.guardianId === userId && <span className="text-[#646D7A] font-normal"> (you)</span>}
                         </p>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           guardian.role === 'primary'
                             ? 'bg-[#1B4D3E]/10 text-[#1B4D3E]'
-                            : 'bg-[#F7F5F0] border border-[#E5E1D8] text-[#6B7280]'
+                            : 'bg-[#F7F5F0] border border-[#E5E1D8] text-[#646D7A]'
                         }`}>
                           {guardian.role === 'primary' ? 'Primary' : 'Co-guardian'}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {guardian.notifyVia === 'gmail'
-                          ? <Mail size={11} className="text-[#6B7280]" />
-                          : <MessageCircle size={11} className="text-[#6B7280]" />
+                          ? <Mail size={11} className="text-[#646D7A]" />
+                          : <MessageCircle size={11} className="text-[#646D7A]" />
                         }
-                        <p className="text-xs text-[#6B7280]">
+                        <p className="text-xs text-[#646D7A]">
                           Updates via {guardian.notifyVia === 'gmail' ? 'Gmail' : 'iMessage'}
                         </p>
                       </div>
@@ -558,7 +677,7 @@ export default function Dashboard() {
                     {guardian.role !== 'primary' && (
                       <button
                         onClick={() => removeGuardian(guardian.guardianId)}
-                        className="text-[#6B7280] hover:text-[#DC2626] transition-colors p-1"
+                        className="text-[#646D7A] hover:text-[#DC2626] transition-colors p-1"
                       >
                         <X size={14} />
                       </button>
@@ -573,12 +692,12 @@ export default function Dashboard() {
                   <UserPlus size={13} />
                   Invite a co-guardian
                 </p>
-                <p className="text-xs text-[#6B7280] mb-3">
+                <p className="text-xs text-[#646D7A] mb-3">
                   They'll receive an email invitation with a magic link to join — no password needed.
                 </p>
                 <div className="flex flex-col gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                    <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                       Their email address
                     </label>
                     <input
@@ -586,11 +705,11 @@ export default function Dashboard() {
                       value={inviteEmail}
                       onChange={e => setInviteEmail(e.target.value)}
                       placeholder="sister@example.com"
-                      className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors"
+                      className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                    <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                       Where should updates (alerts & summaries) be sent to them?
                     </label>
                     <div className="flex gap-2">
@@ -601,7 +720,7 @@ export default function Dashboard() {
                           className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium border transition-all ${
                             inviteNotifyVia === channel
                               ? 'bg-[#1B4D3E] text-white border-[#1B4D3E]'
-                              : 'bg-[#F7F5F0] text-[#6B7280] border-[#E5E1D8] hover:border-[#1B4D3E]'
+                              : 'bg-[#F7F5F0] text-[#646D7A] border-[#E5E1D8] hover:border-[#1B4D3E]'
                           }`}
                         >
                           {channel === 'gmail' ? <Mail size={13} /> : <MessageCircle size={13} />}
@@ -609,7 +728,7 @@ export default function Dashboard() {
                         </button>
                       ))}
                     </div>
-                    <p className="text-xs text-[#6B7280] mt-1.5">
+                    <p className="text-xs text-[#646D7A] mt-1.5">
                       {inviteNotifyVia === 'gmail'
                         ? 'Emergency alerts and weekly summaries go to their Gmail inbox.'
                         : 'Emergency alerts and weekly summaries go to their iMessage.'}
@@ -634,16 +753,16 @@ export default function Dashboard() {
             {/* Active hours */}
             <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
               <p className="font-medium text-[#1A1A1A] text-sm mb-1">Active hours</p>
-              <p className="text-xs text-[#6B7280] mb-4">
-                Companion will only contact {currentParent.name} within this window.
+              <p className="text-xs text-[#646D7A] mb-4">
+                Mae will only contact {currentParent.name} within this window.
               </p>
               <div className="flex items-center gap-3">
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">From</label>
+                  <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">From</label>
                   <input type="time" value={activeFrom} onChange={e => setActiveFrom(e.target.value)} className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#1B4D3E] transition-colors" />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">Until</label>
+                  <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">Until</label>
                   <input type="time" value={activeTo} onChange={e => setActiveTo(e.target.value)} className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#1B4D3E] transition-colors" />
                 </div>
               </div>
@@ -652,7 +771,7 @@ export default function Dashboard() {
             {/* Summary schedule */}
             <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
               <p className="font-medium text-[#1A1A1A] text-sm mb-1">Summary reports</p>
-              <p className="text-xs text-[#6B7280] mb-4">
+              <p className="text-xs text-[#646D7A] mb-4">
                 When to send the digest to all guardians via their chosen channel.
               </p>
 
@@ -665,7 +784,7 @@ export default function Dashboard() {
                     className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
                       summaryFreq === freq
                         ? 'bg-[#1B4D3E] text-white border-[#1B4D3E]'
-                        : 'bg-[#F7F5F0] text-[#6B7280] border-[#E5E1D8] hover:border-[#1B4D3E] hover:text-[#1A1A1A]'
+                        : 'bg-[#F7F5F0] text-[#646D7A] border-[#E5E1D8] hover:border-[#1B4D3E] hover:text-[#1A1A1A]'
                     }`}
                   >
                     {freq.charAt(0).toUpperCase() + freq.slice(1)}
@@ -677,7 +796,7 @@ export default function Dashboard() {
               {summaryFreq === 'weekly' && (
                 <div className="flex flex-col gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">Day</label>
+                    <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">Day</label>
                     <div className="grid grid-cols-7 gap-1">
                       {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => (
                         <button
@@ -686,17 +805,17 @@ export default function Dashboard() {
                           className={`py-2 rounded-lg text-xs font-medium border transition-all ${
                             summaryDay === DAY_NAMES[i]
                               ? 'bg-[#1B4D3E] text-white border-[#1B4D3E]'
-                              : 'bg-[#F7F5F0] text-[#6B7280] border-[#E5E1D8] hover:border-[#1B4D3E]'
+                              : 'bg-[#F7F5F0] text-[#646D7A] border-[#E5E1D8] hover:border-[#1B4D3E]'
                           }`}
                         >
                           {day[0]}
                         </button>
                       ))}
                     </div>
-                    <p className="text-xs text-[#6B7280] mt-1.5 capitalize">Every {summaryDay}</p>
+                    <p className="text-xs text-[#646D7A] mt-1.5 capitalize">Every {summaryDay}</p>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">Time</label>
+                    <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">Time</label>
                     <input
                       type="time"
                       value={summaryTime}
@@ -711,7 +830,7 @@ export default function Dashboard() {
               {summaryFreq === 'monthly' && (
                 <div className="flex flex-col gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">Day of month</label>
+                    <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">Day of month</label>
                     <select
                       value={summaryMonthDay}
                       onChange={e => setSummaryMonthDay(e.target.value)}
@@ -726,7 +845,7 @@ export default function Dashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">Time</label>
+                    <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">Time</label>
                     <input
                       type="time"
                       value={summaryTime}
@@ -741,12 +860,12 @@ export default function Dashboard() {
             {/* Reminders */}
             <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
               <p className="font-medium text-[#1A1A1A] text-sm mb-1">Reminders</p>
-              <p className="text-xs text-[#6B7280] mb-4">Tasks the companion tracks and follows up on.</p>
+              <p className="text-xs text-[#646D7A] mb-4">Tasks the companion tracks and follows up on.</p>
               <div className="flex flex-col gap-2">
                 {reminders.map(r => (
                   <div key={r.id} className="flex items-center justify-between bg-[#F7F5F0] rounded-xl px-4 py-2.5 group">
                     <p className="text-sm text-[#1A1A1A]">{r.text}</p>
-                    <button onClick={() => removeReminderItem(r.id)} className="opacity-0 group-hover:opacity-100 text-[#6B7280] hover:text-[#DC2626] transition-all">
+                    <button onClick={() => removeReminderItem(r.id)} className="opacity-0 group-hover:opacity-100 text-[#646D7A] hover:text-[#DC2626] transition-all">
                       <X size={14} />
                     </button>
                   </div>
@@ -758,7 +877,7 @@ export default function Dashboard() {
                     onChange={e => setNewReminder(e.target.value)}
                     placeholder='e.g. "Check blood sugar at 8AM"'
                     onKeyDown={e => { if (e.key === 'Enter') addReminderItem() }}
-                    className="flex-1 bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors"
+                    className="flex-1 bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors"
                   />
                   <button onClick={addReminderItem} className="px-4 py-2.5 bg-[#1B4D3E] text-white rounded-xl hover:bg-[#2D6A56] transition-colors">
                     <Plus size={16} />
@@ -785,8 +904,8 @@ export default function Dashboard() {
             <button
               key={id}
               onClick={() => setTab(id)}
-              className={`relative flex-1 flex flex-col items-center gap-1 pt-3 pb-4 transition-colors ${
-                tab === id ? 'text-[#1B4D3E]' : 'text-[#6B7280]'
+              className={`relative flex-1 flex flex-col items-center gap-1 pt-3 pb-4 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B4D3E]/50 ${
+                tab === id ? 'text-[#1B4D3E]' : 'text-[#646D7A]'
               }`}
             >
               <Icon size={21} strokeWidth={tab === id ? 2 : 1.5} />
@@ -812,27 +931,27 @@ export default function Dashboard() {
                   {currentParent.name}'s weekly summary
                 </h2>
               </div>
-              <button onClick={() => setShowSummary(false)} className="p-2 text-[#6B7280] hover:text-[#1A1A1A]">
+              <button onClick={() => setShowSummary(false)} className="p-2 text-[#646D7A] hover:text-[#1A1A1A]">
                 <X size={18} />
               </button>
             </div>
 
             {summaryLoading && (
-              <p className="text-sm text-[#6B7280] text-center py-10 animate-pulse">
-                Companion is writing the summary…
+              <p className="text-sm text-[#646D7A] text-center py-10 animate-pulse">
+                Mae is writing the summary…
               </p>
             )}
 
             {!summaryLoading && summary && 'message' in summary && (
-              <p className="text-sm text-[#6B7280] text-center py-10">{summary.message}</p>
+              <p className="text-sm text-[#646D7A] text-center py-10">{summary.message}</p>
             )}
 
             {!summaryLoading && summary && !('message' in summary) && (
               <>
                 <div className="bg-[#F7F5F0] rounded-2xl p-4 mb-4">
-                  <p className="text-xs font-medium text-[#6B7280] uppercase tracking-wide mb-2">Overall mood</p>
+                  <p className="text-xs font-medium text-[#646D7A] uppercase tracking-wide mb-2">Overall mood</p>
                   <p className="text-sm font-medium text-[#1A1A1A] capitalize">{summary.overallMood}</p>
-                  <p className="text-xs text-[#6B7280] mt-0.5">{summary.moodSentence}</p>
+                  <p className="text-xs text-[#646D7A] mt-0.5">{summary.moodSentence}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   {[
@@ -842,12 +961,12 @@ export default function Dashboard() {
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-[#F7F5F0] rounded-2xl p-4 text-center">
                       <p className="text-xl font-medium text-[#1A1A1A]" style={{ fontFamily: 'DM Mono, monospace' }}>{value}</p>
-                      <p className="text-xs text-[#6B7280] mt-1">{label}</p>
+                      <p className="text-xs text-[#646D7A] mt-1">{label}</p>
                     </div>
                   ))}
                 </div>
                 <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5 mb-4">
-                  <p className="text-xs font-medium text-[#6B7280] uppercase tracking-wide mb-3">Notable moments</p>
+                  <p className="text-xs font-medium text-[#646D7A] uppercase tracking-wide mb-3">Notable moments</p>
                   <div className="flex flex-col gap-3">
                     {summary.notableMoments.map((text, i) => (
                       <div key={i} className="flex items-start gap-3">
@@ -858,7 +977,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="bg-[#1B4D3E] rounded-2xl p-5">
-                  <p className="text-xs font-medium text-white/60 uppercase tracking-wide mb-2">Companion note</p>
+                  <p className="text-xs font-medium text-white/60 uppercase tracking-wide mb-2">Mae's note</p>
                   <p className="text-sm text-white leading-relaxed">{summary.companionNote}</p>
                 </div>
               </>

@@ -5,7 +5,7 @@ const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const MODEL = 'llama-3.3-70b-versatile'
 
 // The AI's persona name — what it introduces itself as when texting parents
-export const COMPANION_NAME = process.env.COMPANION_NAME ?? 'Deera'
+export const COMPANION_NAME = process.env.COMPANION_NAME ?? 'Mae'
 
 // ─── Low-level chat call ──────────────────────────────────────────────────────
 
@@ -54,6 +54,19 @@ export async function groqChat(
 
   if (!res.ok) {
     const body = await res.text()
+    // Llama sometimes writes malformed tool-call syntax that Groq rejects at the
+    // API level (code: tool_use_failed). The model's intended output is returned
+    // in error.failed_generation — recover it so the caller's sanitizer can
+    // execute the leaked tools and salvage the reply text instead of dying.
+    if (res.status === 400) {
+      try {
+        const parsed = JSON.parse(body) as { error?: { code?: string; failed_generation?: string } }
+        if (parsed.error?.code === 'tool_use_failed' && parsed.error.failed_generation) {
+          console.warn('[llm] recovered failed_generation from Groq tool_use_failed 400')
+          return { content: parsed.error.failed_generation }
+        }
+      } catch { /* not JSON — fall through to throw */ }
+    }
     throw new Error(`Groq API ${res.status}: ${body}`)
   }
 
@@ -77,6 +90,7 @@ export type TranscriptAnalysis = {
   summary: string
   sentiment: 'positive' | 'neutral' | 'alert'
   emergency: boolean
+  scam: boolean
 }
 
 export async function analyzeTranscript(transcript: string): Promise<TranscriptAnalysis> {
@@ -84,8 +98,11 @@ export async function analyzeTranscript(transcript: string): Promise<TranscriptA
 - "summary": one plain-language sentence describing how the person is doing (no clinical language)
 - "sentiment": exactly one of "positive", "neutral", or "alert"
 - "emergency": true or false
+- "scam": true or false
 
 Flag "alert" if the person mentions pain, a fall, confusion, not eating, loneliness distress, or any health concern worth telling their family about.
+
+Set "scam" to true (and sentiment to "alert") if they mention ANYONE asking them for money, bank details, card numbers, OTP/verification codes, gift cards, crypto, or claims like a locked bank account, a prize/lottery win, an urgent payment, a relative in sudden trouble needing money, or an unknown caller pressuring them. Elders are prime scam targets — err on the side of flagging.
 
 Set "emergency" to true ONLY for genuinely serious situations: a fall, chest pain, trouble breathing, serious confusion, not eating for days, or expressions of despair. A manageable complaint (a headache they're taking medication for, a sore knee, feeling tired) is "alert" with "emergency": false.
 
@@ -146,6 +163,7 @@ export type HeartbeatContext = {
   todayLogs: { type: string; summary: string; sentiment: string; time: string }[]
   facts: { label: string; value: string }[]
   reminders: string[]
+  unansweredStreak: number
 }
 
 export async function decideHeartbeat(ctx: HeartbeatContext): Promise<HeartbeatDecision> {
@@ -172,6 +190,8 @@ Reminders to track: ${remindersText}
 Today's interactions so far:
 ${logsText}
 
+Unanswered streak: they have not replied to your last ${ctx.unansweredStreak} message(s).
+
 Decide what to do RIGHT NOW. Return a JSON object:
 - "action": exactly one of "IDLE" or "MESSAGE"
   - IDLE: not the right time, or person has been contacted recently enough
@@ -180,5 +200,8 @@ Decide what to do RIGHT NOW. Return a JSON object:
 - "messageText": if action is MESSAGE, a warm natural text message (2 sentences max, first-person as ${COMPANION_NAME}, like a caring friend texting — never robotic, never formal)
 
 Consider: time of day, last contact sentiment, reminders, and daily limit.
+If the unanswered streak is 1, prefer IDLE unless several hours have passed — give them space.
+If the unanswered streak is 2 or more and you choose MESSAGE, keep it SHORT and completely pressure-free: something like checking in about your last chat, "if everything's fine just let me know when you can" — never guilt-trip, never repeat earlier questions, never demand a reply.
+If you asked about something (a trip, an appointment) and they never engaged with it, LET IT GO — do not ask about it again. Open with something fresh, the way a normal conversation moves on.
 Respond with only valid JSON.`)
 }

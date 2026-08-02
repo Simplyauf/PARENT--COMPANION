@@ -24,7 +24,7 @@ export default function InstallBanner() {
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-white leading-tight">Add Companion to your home screen</p>
+          <p className="text-sm font-medium text-white leading-tight">Add MaeMate to your home screen</p>
           {isIOS ? (
             <p className="text-xs mt-1" style={{ color: 'rgba(247,245,240,0.7)' }}>
               Tap <Share className="inline w-3 h-3" /> then <strong className="text-white">"Add to Home Screen"</strong> <Plus className="inline w-3 h-3" />
@@ -45,7 +45,7 @@ export default function InstallBanner() {
               Install
             </button>
           )}
-          <button onClick={dismiss} className="p-1 rounded-lg" style={{ color: 'rgba(247,245,240,0.6)' }}>
+          <button onClick={dismiss} aria-label="Dismiss install banner" className="p-1 rounded-lg" style={{ color: 'rgba(247,245,240,0.6)' }}>
             <X className="w-4 h-4" />
           </button>
         </div>

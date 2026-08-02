@@ -45,6 +45,7 @@ export type ApiParent = {
   activeHoursFrom: string
   activeHoursTo: string
   isActive: boolean
+  pausedUntil: string | null
   createdAt: string
   role: 'primary' | 'co'
   notifyVia: 'imessage' | 'gmail'
@@ -115,6 +116,7 @@ export const updateParent = (id: string, body: Partial<{
   timezone: string
   activeHoursFrom: string
   activeHoursTo: string
+  pauseDays: number // > 0 pauses Mae's check-ins for that many days; 0 resumes
 }>) => api<{ ok: true }>(`/api/parents/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
 
 export const requestCheckin = (parentId: string) =>

@@ -65,7 +65,7 @@ export default function Setup() {
 
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-1.5 text-[#6B7280] text-sm mb-8 hover:text-[#1A1A1A] transition-colors"
+          className="flex items-center gap-1.5 text-[#646D7A] text-sm mb-8 hover:text-[#1A1A1A] transition-colors"
         >
           <ArrowLeft size={16} />
           Back
@@ -81,7 +81,7 @@ export default function Setup() {
           >
             {isGuardian ? "Set up your parent's companion" : 'Set up your companion'}
           </h2>
-          <p className="text-[#6B7280] text-sm mt-2">
+          <p className="text-[#646D7A] text-sm mt-2">
             {isGuardian
               ? "This is what guides every check-in and conversation with your parent."
               : 'This is what guides every check-in and conversation with you.'}
@@ -97,7 +97,7 @@ export default function Setup() {
             </h3>
             <div className="flex flex-col gap-3">
               <div>
-                <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                   Full name
                 </label>
                 <input
@@ -106,11 +106,11 @@ export default function Setup() {
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder="e.g. Margaret Adeyemi"
-                  className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors"
+                  className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                   Phone number
                 </label>
                 <input
@@ -119,14 +119,14 @@ export default function Setup() {
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
                   placeholder="+1 555 000 0000"
-                  className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors"
+                  className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors"
                 />
-                <p className="text-xs text-[#6B7280] mt-1.5">
-                  Companion texts this number directly — works with iMessage or regular SMS, no app needed.
+                <p className="text-xs text-[#646D7A] mt-1.5">
+                  Mae texts this number directly — works with iMessage or regular SMS, no app needed.
                 </p>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                   Timezone
                 </label>
                 <select
@@ -151,7 +151,7 @@ export default function Setup() {
             </h3>
             <div className="flex flex-col gap-3">
               <div>
-                <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                   {isGuardian ? 'Your phone number (for alerts)' : "Family member's phone number (for alerts)"}
                 </label>
                 <input
@@ -160,11 +160,11 @@ export default function Setup() {
                   value={guardianPhone}
                   onChange={e => setGuardianPhone(e.target.value)}
                   placeholder="+1 555 000 0001"
-                  className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors"
+                  className="w-full bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                   How should alerts &amp; summaries reach {isGuardian ? 'you' : 'them'}?
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -178,7 +178,7 @@ export default function Setup() {
                         onChange={() => setNotifyVia(ch)}
                         className="accent-[#1B4D3E]"
                       />
-                      {ch === 'imessage' ? <MessageCircle size={14} className="text-[#6B7280]" /> : <Mail size={14} className="text-[#6B7280]" />}
+                      {ch === 'imessage' ? <MessageCircle size={14} className="text-[#646D7A]" /> : <Mail size={14} className="text-[#646D7A]" />}
                       <span className="text-sm text-[#1A1A1A]">{ch === 'imessage' ? 'iMessage' : 'Gmail'}</span>
                     </label>
                   ))}
@@ -190,12 +190,12 @@ export default function Setup() {
           {/* Active hours */}
           <div className="bg-white rounded-2xl border border-[#E5E1D8] p-5">
             <h3 className="font-medium text-[#1A1A1A] text-sm mb-1">Active hours</h3>
-            <p className="text-xs text-[#6B7280] mb-4">
-              Companion will only call or message within these hours.
+            <p className="text-xs text-[#646D7A] mb-4">
+              Mae will only message within these hours.
             </p>
             <div className="flex items-center gap-3">
               <div className="flex-1">
-                <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                   From
                 </label>
                 <input
@@ -206,7 +206,7 @@ export default function Setup() {
                 />
               </div>
               <div className="flex-1">
-                <label className="block text-xs font-medium text-[#6B7280] mb-1.5 uppercase tracking-wide">
+                <label className="block text-xs font-medium text-[#646D7A] mb-1.5 uppercase tracking-wide">
                   Until
                 </label>
                 <input
@@ -222,7 +222,7 @@ export default function Setup() {
           {/* Reminders */}
           <div className="bg-white rounded-2xl border border-[#E5E1D8] p-5">
             <h3 className="font-medium text-[#1A1A1A] text-sm mb-1">Reminders</h3>
-            <p className="text-xs text-[#6B7280] mb-4">
+            <p className="text-xs text-[#646D7A] mb-4">
               Specific tasks the companion should track. Optional.
             </p>
             <div className="flex flex-col gap-2">
@@ -233,13 +233,13 @@ export default function Setup() {
                     value={r}
                     onChange={e => updateReminder(i, e.target.value)}
                     placeholder='e.g. "Take blood pressure pill at 2:00 PM"'
-                    className="flex-1 bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors"
+                    className="flex-1 bg-[#F7F5F0] border border-[#E5E1D8] rounded-xl px-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors"
                   />
                   {reminders.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeReminder(i)}
-                      className="p-2 text-[#6B7280] hover:text-[#DC2626] transition-colors"
+                      className="p-2 text-[#646D7A] hover:text-[#DC2626] transition-colors"
                     >
                       <X size={16} />
                     </button>

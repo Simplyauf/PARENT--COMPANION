@@ -47,7 +47,7 @@ export default function Auth() {
 
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-1.5 text-[#6B7280] text-sm mb-8 hover:text-[#1A1A1A] transition-colors"
+          className="flex items-center gap-1.5 text-[#646D7A] text-sm mb-8 hover:text-[#1A1A1A] transition-colors"
         >
           <ArrowLeft size={16} />
           Back
@@ -63,7 +63,7 @@ export default function Auth() {
           >
             What's your email?
           </h2>
-          <p className="text-[#6B7280] text-sm mt-2">
+          <p className="text-[#646D7A] text-sm mt-2">
             We'll send a magic link — no password needed, ever.
           </p>
         </div>
@@ -79,7 +79,7 @@ export default function Auth() {
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full bg-white border border-[#E5E1D8] rounded-xl px-4 py-3 text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#1B4D3E] transition-colors"
+              className="w-full bg-white border border-[#E5E1D8] rounded-xl px-4 py-3 text-sm text-[#1A1A1A] placeholder:text-[#646D7A] focus:outline-none focus:border-[#1B4D3E] transition-colors"
             />
           </div>
 
@@ -99,7 +99,7 @@ export default function Auth() {
           </button>
         </form>
 
-        <p className="text-center text-[#6B7280] text-xs mt-6 leading-relaxed">
+        <p className="text-center text-[#646D7A] text-xs mt-6 leading-relaxed">
           New or returning user — same flow. If you have an account we'll sign you in.
           If not, we'll create one.
         </p>

@@ -42,7 +42,7 @@ export async function sendAlertEmail(payload: AlertPayload) {
   const resend = getResend()
   if (!resend) return
   await resend.emails.send({
-    from: 'Companion <alerts@companion.app>',
+    from: process.env.EMAIL_FROM ?? 'MaeMate <alerts@maemate.app>',
     to: payload.guardianEmail,
     subject,
     html: `
@@ -51,13 +51,13 @@ export async function sendAlertEmail(payload: AlertPayload) {
           ${payload.isEmergency ? 'Emergency Alert' : 'Check-in Alert'}
         </p>
         <p style="color: #1A1A1A; font-size: 15px; line-height: 1.6; margin: 0 0 12px;">
-          Companion flagged something during ${payload.parentName}'s check-in:
+          Mae flagged something during ${payload.parentName}'s check-in:
         </p>
         <blockquote style="border-left: 3px solid #DC2626; margin: 0 0 20px; padding: 12px 16px; background: white; border-radius: 8px; color: #1A1A1A; font-size: 15px;">
           ${payload.summary}
         </blockquote>
         <p style="color: #6B7280; font-size: 13px;">
-          Log in to your Companion dashboard for the full activity log.
+          Log in to your MaeMate dashboard for the full activity log.
         </p>
       </div>
     `,
@@ -72,7 +72,7 @@ export async function sendSummaryEmail(payload: SummaryPayload) {
   const resend = getResend()
   if (!resend) return
   await resend.emails.send({
-    from: 'Companion <summaries@companion.app>',
+    from: process.env.EMAIL_FROM ?? 'MaeMate <summaries@maemate.app>',
     to: payload.guardianEmail,
     subject: `${payload.parentName}'s weekly summary — ${payload.weekOf}`,
     html: `
@@ -111,7 +111,7 @@ export async function sendSummaryEmail(payload: SummaryPayload) {
         </div>
 
         <div style="background: #1B4D3E; border-radius: 14px; padding: 20px;">
-          <p style="color: rgba(247,245,240,0.6); font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 8px;">Companion note</p>
+          <p style="color: rgba(247,245,240,0.6); font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 8px;">Mae's note</p>
           <p style="color: white; font-size: 14px; line-height: 1.7; margin: 0;">${payload.companionNote}</p>
         </div>
       </div>
