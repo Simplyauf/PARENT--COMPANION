@@ -1,11 +1,87 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shield, User, ArrowRight } from 'lucide-react'
+import { Shield, User, ArrowRight, Check, ChevronDown, Heart, Users, Sparkles, Globe2, Smartphone } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+
+const TRUST_SIGNALS = [
+  { icon: Smartphone, text: 'No app for them to install' },
+  { icon: Globe2, text: '100+ languages, voice notes included' },
+  { icon: Shield, text: 'Cancel anytime, no contracts' },
+]
+
+const PLANS = [
+  {
+    name: 'Basic',
+    tagline: 'One companion, one person',
+    icon: Heart,
+    monthly: { price: 12, launchPrice: 8.4 },
+    yearly: { price: 120, launchPrice: 84, equivalentPerMonth: 10 },
+    features: [
+      'Mae checks in every day by text, plus voice notes in their own language',
+      'Remembers what matters: health, hobbies, family',
+      'Alerts you the moment something feels off, like a mood change, distress, or a possible scam',
+      "Weekly summary of what happened and how they're doing",
+      '1 account with full access',
+    ],
+    highlight: false,
+  },
+  {
+    name: 'Family',
+    tagline: 'When more than one person wants to stay in the loop',
+    icon: Users,
+    monthly: { price: 22, launchPrice: 15.4 },
+    yearly: { price: 216, launchPrice: 151.2, equivalentPerMonth: 18 },
+    features: [
+      'Everything in Basic',
+      "Up to 5 people can log in: siblings, a spouse, whoever's involved",
+      'Urgent alerts reach everyone added, not just one inbox',
+      'More frequent check-ins, no daily limit',
+      'One shared activity feed for the whole family',
+    ],
+    highlight: true,
+  },
+]
+
+const FAQS = [
+  {
+    q: 'Does my parent need to download an app or learn new technology?',
+    a: 'No. Mae texts and takes voice notes on the phone they already have, so there is no app to install and no account for them to manage.',
+  },
+  {
+    q: 'What app does Mae use to text my parent?',
+    a: "Right now Mae reaches them over iMessage, with SMS as a fallback if they're not on an iPhone. WhatsApp support is on the way.",
+  },
+  {
+    q: 'Is Mae a real person?',
+    a: "No. Mae is an AI companion, built to check in like a caring friend would rather than read from a script.",
+  },
+  {
+    q: "What happens if Mae notices something's wrong?",
+    a: 'Mae flags mood changes, distress, or a possible scam attempt and alerts every guardian on the account right away.',
+  },
+  {
+    q: 'Can more than one family member stay in the loop?',
+    a: 'Yes. The Family plan lets you invite co-guardians, so siblings or a spouse all get the same updates and alerts.',
+  },
+  {
+    q: "What if my parent doesn't speak English?",
+    a: 'Mae understands and replies in whatever language they use, including voice notes.',
+  },
+  {
+    q: 'Can I pause or cancel anytime?',
+    a: 'Yes. Pause check-ins anytime from the dashboard, and cancel your subscription anytime. No lock-in, no contracts.',
+  },
+  {
+    q: 'Does Mae make phone calls?',
+    a: 'Not yet. Today Mae checks in by text and voice note, with phone call check-ins coming soon.',
+  },
+]
 
 export default function Landing() {
   const navigate = useNavigate()
   const [signedIn, setSignedIn] = useState(false)
+  const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [cycle, setCycle] = useState<'monthly' | 'yearly'>('monthly')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSignedIn(!!session))
@@ -15,90 +91,251 @@ export default function Landing() {
     navigate('/auth', { state: { role } })
   }
 
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   return (
-    <main className="min-h-screen bg-[#F7F5F0] flex flex-col items-center justify-center px-4 py-8">
-      <div className="w-full max-w-md">
+    <main className="min-h-screen bg-bg">
+      {/* Nav */}
+      <nav className="sticky top-0 z-10 bg-bg/90 backdrop-blur border-b border-border">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+          <img src="/logo_3.png" alt="MaeMate" width={400} height={139} className="h-8 w-auto" />
+          <div className="flex items-center gap-5 text-sm">
+            <button onClick={() => scrollTo('pricing')} className="text-muted hover:text-text transition-colors hidden sm:inline">
+              Pricing
+            </button>
+            <button onClick={() => scrollTo('faq')} className="text-muted hover:text-text transition-colors hidden sm:inline">
+              FAQ
+            </button>
+            <button onClick={() => navigate('/auth')} className="text-primary font-medium hover:underline">
+              Sign in
+            </button>
+          </div>
+        </div>
+      </nav>
 
-        {signedIn && (
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="w-full mb-6 bg-[#1B4D3E] text-white rounded-xl py-3.5 px-4 text-sm font-medium flex items-center justify-center gap-2 hover:bg-[#2D6A56] transition-colors"
-          >
-            You're already signed in — open your dashboard
-            <ArrowRight size={16} />
-          </button>
-        )}
+      {/* Hero */}
+      <section className="flex flex-col items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          {signedIn && (
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="w-full mb-6 bg-primary text-white rounded-xl py-3.5 px-4 text-sm font-medium flex items-center justify-center gap-2 hover:bg-primary-light transition-colors"
+            >
+              You're already signed in, open your dashboard
+              <ArrowRight size={16} />
+            </button>
+          )}
 
-        <div className="text-center mb-6">
-          <p className="text-[#1B4D3E] font-medium text-sm tracking-widest uppercase mb-4">
-            MaeMate
-          </p>
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <img
+                src="/hero.webp"
+                alt="Elderly people using their phones"
+                width={640}
+                height={640}
+                className="w-full max-w-xs object-contain max-h-52"
+              />
+            </div>
 
-          {/* Hero illustration */}
-          <div className="flex justify-center mb-4">
-            <img
-              src="/hero.webp"
-              alt="Elderly people using their phones"
-              width={640}
-              height={640}
-              className="w-full max-w-xs object-contain max-h-52"
-            />
+            <h1
+              className="text-4xl text-text leading-tight mb-3"
+              style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}
+            >
+              Peace of mind,<br />
+              <em style={{ fontStyle: 'italic' }}>one call away.</em>
+            </h1>
+            <p className="text-muted text-sm leading-relaxed">
+              An AI companion that checks in on your loved ones so you don't have to worry.
+            </p>
           </div>
 
-          <h1
-            className="text-4xl text-[#1A1A1A] leading-tight mb-3"
-            style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}
-          >
-            Peace of mind,<br />
-            <em style={{ fontStyle: 'italic' }}>one call away.</em>
-          </h1>
-          <p className="text-[#646D7A] text-sm leading-relaxed">
-            An AI companion that checks in on your loved ones so you don't have to worry.
+          <p className="text-center text-text font-medium mb-3">
+            Who is setting up this companion?
+          </p>
+
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => select('guardian')}
+              className="w-full bg-surface border border-border rounded-xl p-5 text-left flex items-center gap-4 hover:border-primary hover:shadow-sm transition-all duration-200 group"
+            >
+              <div className="w-10 h-10 rounded-full bg-bg flex items-center justify-center group-hover:bg-primary transition-colors">
+                <Shield size={18} className="text-primary group-hover:text-white transition-colors" />
+              </div>
+              <div>
+                <p className="font-medium text-text text-sm">I am a Guardian</p>
+                <p className="text-muted text-xs mt-0.5">Setting this up for a family member</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => select('elder')}
+              className="w-full bg-surface border border-border rounded-xl p-5 text-left flex items-center gap-4 hover:border-primary hover:shadow-sm transition-all duration-200 group"
+            >
+              <div className="w-10 h-10 rounded-full bg-bg flex items-center justify-center group-hover:bg-primary transition-colors">
+                <User size={18} className="text-primary group-hover:text-white transition-colors" />
+              </div>
+              <div>
+                <p className="font-medium text-text text-sm">I am an Older Adult</p>
+                <p className="text-muted text-xs mt-0.5">Setting this up for myself</p>
+              </div>
+            </button>
+          </div>
+
+          <p className="text-center text-muted text-xs mt-8">
+            Already have an account?{' '}
+            <button onClick={() => navigate('/auth')} className="text-primary font-medium hover:underline">
+              Sign in
+            </button>
           </p>
         </div>
+      </section>
 
-        <p className="text-center text-[#1A1A1A] font-medium mb-3">
-          Who is setting up this companion?
-        </p>
-
-        <div className="flex flex-col gap-3">
-          <button
-            onClick={() => select('guardian')}
-            className="w-full bg-white border border-[#E5E1D8] rounded-xl p-5 text-left flex items-center gap-4 hover:border-[#1B4D3E] hover:shadow-sm transition-all duration-200 group"
-          >
-            <div className="w-10 h-10 rounded-full bg-[#F7F5F0] flex items-center justify-center group-hover:bg-[#1B4D3E] transition-colors">
-              <Shield size={18} className="text-[#1B4D3E] group-hover:text-white transition-colors" />
+      {/* Trust strip */}
+      <section className="px-4 py-8 bg-surface border-t border-border">
+        <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+          {TRUST_SIGNALS.map(({ icon: Icon, text }) => (
+            <div key={text} className="flex items-center gap-2 text-muted text-xs font-medium">
+              <Icon size={15} className="text-primary" />
+              {text}
             </div>
-            <div>
-              <p className="font-medium text-[#1A1A1A] text-sm">I am a Guardian</p>
-              <p className="text-[#646D7A] text-xs mt-0.5">Setting this up for a family member</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => select('elder')}
-            className="w-full bg-white border border-[#E5E1D8] rounded-xl p-5 text-left flex items-center gap-4 hover:border-[#1B4D3E] hover:shadow-sm transition-all duration-200 group"
-          >
-            <div className="w-10 h-10 rounded-full bg-[#F7F5F0] flex items-center justify-center group-hover:bg-[#1B4D3E] transition-colors">
-              <User size={18} className="text-[#1B4D3E] group-hover:text-white transition-colors" />
-            </div>
-            <div>
-              <p className="font-medium text-[#1A1A1A] text-sm">I am an Older Adult</p>
-              <p className="text-[#646D7A] text-xs mt-0.5">Setting this up for myself</p>
-            </div>
-          </button>
+          ))}
         </div>
+      </section>
 
-        <p className="text-center text-[#646D7A] text-xs mt-8">
-          Already have an account?{' '}
-          <button
-            onClick={() => navigate('/auth')}
-            className="text-[#1B4D3E] font-medium hover:underline"
-          >
-            Sign in
-          </button>
-        </p>
-      </div>
+      {/* Pricing */}
+      <section id="pricing" className="px-4 py-20 bg-gradient-to-b from-surface to-bg border-t border-border">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-4">
+            <span className="inline-flex items-center gap-1.5 bg-accent text-white text-xs font-semibold px-4 py-1.5 rounded-full shadow-sm">
+              <Sparkles size={13} />
+              Launch offer: 30% off your first {cycle === 'monthly' ? '3 months' : 'year'}
+            </span>
+          </div>
+          <h2 className="text-4xl font-serif font-medium text-text text-center mb-3">
+            Simple pricing, no surprises
+          </h2>
+          <p className="text-muted text-sm text-center mb-8">
+            Less than a coffee run a week · Cancel anytime, no contracts
+          </p>
+
+          <div className="flex justify-center mb-14">
+            <div className="inline-flex bg-surface border border-border rounded-full p-1">
+              <button
+                onClick={() => setCycle('monthly')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  cycle === 'monthly' ? 'bg-primary text-white' : 'text-muted'
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setCycle('yearly')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                  cycle === 'yearly' ? 'bg-primary text-white' : 'text-muted'
+                }`}
+              >
+                Yearly
+                <span className={cycle === 'yearly' ? 'text-white/80' : 'text-accent'}>2 months free</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-8 max-w-2xl mx-auto items-start">
+            {PLANS.map((plan) => {
+              const billing = plan[cycle]
+              return (
+                <div
+                  key={plan.name}
+                  className={`rounded-2xl p-7 border relative transition-transform duration-200 ${
+                    plan.highlight
+                      ? 'bg-gradient-to-b from-primary/[0.06] to-surface border-primary shadow-xl sm:scale-105'
+                      : 'bg-surface border-border shadow-sm hover:shadow-md'
+                  }`}
+                >
+                  {plan.highlight && (
+                    <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-primary text-white text-xs font-semibold px-4 py-1.5 rounded-full shadow">
+                      Most popular
+                    </span>
+                  )}
+
+                  <div className={`w-11 h-11 rounded-full flex items-center justify-center mb-4 ${plan.highlight ? 'bg-primary' : 'bg-bg'}`}>
+                    <plan.icon size={20} className={plan.highlight ? 'text-white' : 'text-primary'} />
+                  </div>
+
+                  <h3 className="text-2xl font-serif font-medium text-text mb-1">{plan.name}</h3>
+                  <p className="text-muted text-xs mb-5">{plan.tagline}</p>
+
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className="text-4xl font-semibold text-text">${billing.launchPrice.toFixed(2)}</span>
+                    <span className="text-muted text-sm">/{cycle === 'monthly' ? 'mo' : 'yr'}</span>
+                  </div>
+                  <p className="text-xs mb-1 flex items-center gap-2">
+                    <span className="text-muted line-through">${billing.price}/{cycle === 'monthly' ? 'mo' : 'yr'}</span>
+                    <span className="text-accent font-semibold">Save 30%</span>
+                  </p>
+                  {cycle === 'yearly' && (
+                    <p className="text-muted text-xs mb-5">≈ ${(billing.equivalentPerMonth as number).toFixed(2)}/mo, billed yearly</p>
+                  )}
+                  {cycle === 'monthly' && <div className="mb-5" />}
+
+                  <ul className="space-y-3 mb-7">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2.5 text-sm text-text">
+                        <Check size={16} className="text-primary flex-shrink-0 mt-0.5" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <button
+                    onClick={() => navigate('/auth')}
+                    className={`w-full rounded-xl py-3.5 text-sm font-semibold transition-colors ${
+                      plan.highlight
+                        ? 'bg-primary text-white hover:bg-primary-light shadow-md'
+                        : 'bg-bg text-text border border-border hover:border-primary'
+                    }`}
+                  >
+                    Start 7-Day Free Trial
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="px-4 py-20 border-t border-border">
+        <div className="max-w-2xl mx-auto">
+          <span className="block text-center text-accent text-xs font-semibold tracking-widest uppercase mb-3">FAQ</span>
+          <h2 className="text-4xl font-serif font-medium text-text text-center mb-12">Questions, answered</h2>
+
+          <div className="flex flex-col gap-3">
+            {FAQS.map((item, i) => (
+              <div
+                key={item.q}
+                className={`bg-surface border rounded-xl overflow-hidden transition-colors ${openFaq === i ? 'border-primary' : 'border-border'}`}
+              >
+                <button
+                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  className="w-full flex items-center justify-between gap-4 p-5 text-left"
+                >
+                  <span className="text-sm font-medium text-text">{item.q}</span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${openFaq === i ? 'bg-primary' : 'bg-bg'}`}>
+                    <ChevronDown
+                      size={14}
+                      className={`transition-transform ${openFaq === i ? 'rotate-180 text-white' : 'text-muted'}`}
+                    />
+                  </div>
+                </button>
+                {openFaq === i && <p className="px-5 pb-5 text-sm text-muted leading-relaxed">{item.a}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </main>
   )
 }
