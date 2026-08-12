@@ -275,8 +275,8 @@ export default function Landing() {
                     <span className="text-muted line-through">${billing.price}/{cycle === 'monthly' ? 'mo' : 'yr'}</span>
                     <span className="text-accent font-semibold">Save 30%</span>
                   </p>
-                  {cycle === 'yearly' && (
-                    <p className="text-muted text-xs mb-5">≈ ${(billing.equivalentPerMonth as number).toFixed(2)}/mo, billed yearly</p>
+                  {cycle === 'yearly' && 'equivalentPerMonth' in billing && (
+                    <p className="text-muted text-xs mb-5">≈ ${billing.equivalentPerMonth.toFixed(2)}/mo, billed yearly</p>
                   )}
                   {cycle === 'monthly' && <div className="mb-5" />}
 
