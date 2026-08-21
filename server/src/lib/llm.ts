@@ -1,8 +1,7 @@
-// LLM client — Groq (OpenAI-compatible API), llama-3.3-70b-versatile
-// Free tier: 30 req/min, 1k req/day, 100k tokens/day — plenty for Phase 1
+// LLM client — Vertex AI (Gemini). Provider-specific call logic lives in
+// vertex.ts; this module is the stable interface the rest of the app imports.
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const MODEL = 'llama-3.3-70b-versatile'
+import { vertexChat } from './vertex.js'
 
 // The AI's persona name — what it introduces itself as when texting parents
 export const COMPANION_NAME = process.env.COMPANION_NAME ?? 'Mae'
@@ -31,53 +30,10 @@ export type ToolDef = {
   }
 }
 
-export async function groqChat(
-  messages: ChatMessage[],
-  opts: { tools?: ToolDef[]; jsonMode?: boolean; temperature?: number } = {}
-): Promise<{ content: string | null; tool_calls?: ToolCall[] }> {
-  if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY not set')
+export const chat = vertexChat
 
-  const res = await fetch(GROQ_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      temperature: opts.temperature ?? 0.7,
-      ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
-      ...(opts.jsonMode ? { response_format: { type: 'json_object' } } : {}),
-    }),
-  })
-
-  if (!res.ok) {
-    const body = await res.text()
-    // Llama sometimes writes malformed tool-call syntax that Groq rejects at the
-    // API level (code: tool_use_failed). The model's intended output is returned
-    // in error.failed_generation — recover it so the caller's sanitizer can
-    // execute the leaked tools and salvage the reply text instead of dying.
-    if (res.status === 400) {
-      try {
-        const parsed = JSON.parse(body) as { error?: { code?: string; failed_generation?: string } }
-        if (parsed.error?.code === 'tool_use_failed' && parsed.error.failed_generation) {
-          console.warn('[llm] recovered failed_generation from Groq tool_use_failed 400')
-          return { content: parsed.error.failed_generation }
-        }
-      } catch { /* not JSON — fall through to throw */ }
-    }
-    throw new Error(`Groq API ${res.status}: ${body}`)
-  }
-
-  const data = await res.json() as {
-    choices: { message: { content: string | null; tool_calls?: ToolCall[] } }[]
-  }
-  return data.choices[0].message
-}
-
-async function groqJSON<T>(prompt: string): Promise<T> {
-  const msg = await groqChat(
+async function chatJSON<T>(prompt: string): Promise<T> {
+  const msg = await chat(
     [{ role: 'user', content: prompt }],
     { jsonMode: true, temperature: 0.3 }
   )
@@ -94,15 +50,17 @@ export type TranscriptAnalysis = {
 }
 
 export async function analyzeTranscript(transcript: string): Promise<TranscriptAnalysis> {
-  return groqJSON<TranscriptAnalysis>(`You are an eldercare assistant. Analyze this message from an elderly person and return a JSON object with:
+  return chatJSON<TranscriptAnalysis>(`You are an eldercare assistant. Analyze this message from an elderly person and return a JSON object with:
 - "summary": one plain-language sentence describing how the person is doing (no clinical language)
 - "sentiment": exactly one of "positive", "neutral", or "alert"
 - "emergency": true or false
 - "scam": true or false
 
-Flag "alert" if the person mentions pain, a fall, confusion, not eating, loneliness distress, or any health concern worth telling their family about.
+CRITICAL — ground everything strictly in what is literally written below. Never invent a threat, a caller, a scammer, a relative, or an event that isn't explicitly mentioned in the message. If the message is short, casual, or ambiguous, that alone is never grounds for "alert" — default to "neutral" or "positive" unless something concrete and concerning is actually stated.
 
-Set "scam" to true (and sentiment to "alert") if they mention ANYONE asking them for money, bank details, card numbers, OTP/verification codes, gift cards, crypto, or claims like a locked bank account, a prize/lottery win, an urgent payment, a relative in sudden trouble needing money, or an unknown caller pressuring them. Elders are prime scam targets — err on the side of flagging.
+Flag "alert" only for real signals about the person's wellbeing: pain, a fall, confusion, not eating, genuine loneliness distress, or a real health concern. Do NOT flag: jokes, sarcasm, teasing, or venting directed at the companion app itself (e.g. "I'm uninstalling you", "you're annoying me", complaints about the AI) — that is not a safety signal about the person.
+
+Set "scam" to true (and sentiment to "alert") ONLY if the message explicitly describes someone actually asking them for money, bank details, card numbers, OTP/verification codes, gift cards, crypto, or explicitly mentions a locked-account call, a prize/lottery claim, an urgent payment demand, or a caller pressuring them. Never infer a scam from a vague or unrelated message.
 
 Set "emergency" to true ONLY for genuinely serious situations: a fall, chest pain, trouble breathing, serious confusion, not eating for days, or expressions of despair. A manageable complaint (a headache they're taking medication for, a sore knee, feeling tired) is "alert" with "emergency": false.
 
@@ -130,7 +88,7 @@ export async function generateWeeklySummary(
     .map(l => `[${l.createdAt.toDateString()} ${l.type} - ${l.sentiment}] ${l.summary}`)
     .join('\n')
 
-  return groqJSON<WeeklySummary>(`You are writing a weekly wellbeing summary for a guardian about their elderly family member named ${parentName}.
+  return chatJSON<WeeklySummary>(`You are writing a weekly wellbeing summary for a guardian about their elderly family member named ${parentName}.
 
 Based on these interaction logs from the past 7 days, return a JSON object with:
 - "overallMood": one of "great", "good", "mixed", "concerning"
@@ -164,6 +122,7 @@ export type HeartbeatContext = {
   facts: { label: string; value: string }[]
   reminders: string[]
   unansweredStreak: number
+  isFirstContact: boolean
 }
 
 export async function decideHeartbeat(ctx: HeartbeatContext): Promise<HeartbeatDecision> {
@@ -178,7 +137,7 @@ export async function decideHeartbeat(ctx: HeartbeatContext): Promise<HeartbeatD
   const factsText = ctx.facts.map(f => `${f.label}: ${f.value}`).join(', ') || 'None yet'
   const remindersText = ctx.reminders.join(', ') || 'None'
 
-  return groqJSON<HeartbeatDecision>(`You are ${COMPANION_NAME}, an autonomous eldercare companion agent making a real-time check-in decision.
+  return chatJSON<HeartbeatDecision>(`You are ${COMPANION_NAME}, an autonomous eldercare companion agent making a real-time check-in decision.
 
 Person: ${ctx.parentName}
 Current time: ${ctx.currentTime}
@@ -189,6 +148,8 @@ Reminders to track: ${remindersText}
 
 Today's interactions so far:
 ${logsText}
+
+${ctx.isFirstContact ? `This would be the very FIRST message you've ever sent this person. If you choose MESSAGE, briefly introduce yourself by name and mention their family asked you to check in and that you'll share how they're doing with them — say it warmly, like a friend being introduced, not like a legal disclaimer, then move naturally into a light, easy question.` : ''}
 
 Unanswered streak: they have not replied to your last ${ctx.unansweredStreak} message(s).
 

@@ -1,10 +1,11 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { db } from '../db/index.js'
-import { guardianParentLinks, invites, users } from '../db/schema.js'
+import { guardianParentLinks, invites, users, subscriptions } from '../db/schema.js'
 import { eq, and } from 'drizzle-orm'
 import { Resend } from 'resend'
 import crypto from 'crypto'
+import { SEAT_LIMITS, type Plan } from '../lib/plans.js'
 
 const getResend = () => process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -49,6 +50,22 @@ export const guardianRoutes: FastifyPluginAsync = async (fastify) => {
     const { parentId, email, notifyVia } = parse.data
 
     await assertPrimaryAccess(request.userId, parentId, reply)
+
+    const sub = await db.query.subscriptions.findFirst({ where: eq(subscriptions.parentId, parentId) })
+    const seatLimit = SEAT_LIMITS[(sub?.plan ?? 'basic') as Plan]
+
+    const [currentGuardians, pendingInvites] = await Promise.all([
+      db.query.guardianParentLinks.findMany({ where: eq(guardianParentLinks.parentId, parentId) }),
+      db.query.invites.findMany({ where: and(eq(invites.parentId, parentId)) }),
+    ])
+    const seatsUsed = currentGuardians.length + pendingInvites.filter(i => !i.acceptedAt).length
+    if (seatsUsed >= seatLimit) {
+      return reply.status(403).send({
+        error: seatLimit === 1
+          ? 'The Basic plan includes 1 account. Upgrade to Family to invite co-guardians.'
+          : `This plan allows up to ${seatLimit} guardians — you've reached that limit.`,
+      })
+    }
 
     // Check for existing pending invite
     const existing = await db.query.invites.findFirst({

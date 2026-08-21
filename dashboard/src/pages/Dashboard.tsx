@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Phone, Settings, Clock, Plus, X, AlertCircle,
   ChevronRight, MessageCircle, PhoneCall, LayoutGrid,
-  Activity, Save, ChevronDown, Mail, Check, UserPlus, Crown, User,
+  Activity, Save, ChevronDown, Mail, Check, UserPlus, Crown, User, CreditCard, ExternalLink,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -10,9 +10,9 @@ import {
   getParents, getParent, getActivity, getGuardians, getWeeklySummary,
   addFact as apiAddFact, deleteFact, addReminder as apiAddReminder, deleteReminder,
   updateParent, updateSchedule, inviteGuardian, removeGuardian as apiRemoveGuardian,
-  requestCheckin, ApiError,
+  requestCheckin, ApiError, getSubscription, getCustomerPortal,
   type ApiParent, type ApiFact, type ApiReminder, type ApiLogEntry,
-  type ApiGuardian, type ApiWeeklySummary,
+  type ApiGuardian, type ApiWeeklySummary, type ApiSubscription,
 } from '../lib/api'
 
 // Subtle texture on the deep-green body: a faint dot grid + a soft top glow
@@ -75,6 +75,8 @@ export default function Dashboard() {
   const [addingFact, setAddingFact] = useState(false)
   const [checkinState, setCheckinState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [pauseBusy, setPauseBusy] = useState(false)
+  const [subscription, setSubscription] = useState<ApiSubscription | null>(null)
+  const [portalLoading, setPortalLoading] = useState(false)
 
   const [activity, setActivity] = useState<ApiLogEntry[]>([])
 
@@ -166,6 +168,14 @@ export default function Dashboard() {
     } catch (err) {
       setLoadError((err as Error).message)
     }
+
+    // Billing is fetched separately — a missing/errored subscription
+    // shouldn't block the rest of the dashboard from loading
+    try {
+      setSubscription(await getSubscription(parentId))
+    } catch {
+      setSubscription(null)
+    }
   }, [])
 
   useEffect(() => {
@@ -199,6 +209,19 @@ export default function Dashboard() {
       setNewLabel(''); setNewValue(''); setAddingFact(false)
     } catch (err) {
       setLoadError((err as Error).message)
+    }
+  }
+
+  const openBillingPortal = async () => {
+    if (!currentParent || portalLoading) return
+    setPortalLoading(true)
+    try {
+      const { url } = await getCustomerPortal(currentParent.id)
+      window.open(url, '_blank')
+    } catch (err) {
+      setLoadError((err as Error).message)
+    } finally {
+      setPortalLoading(false)
     }
   }
 
@@ -748,6 +771,52 @@ export default function Dashboard() {
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Billing */}
+            <div className="bg-white border border-[#E5E1D8] rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <CreditCard size={16} className="text-[#1B4D3E]" />
+                <p className="font-medium text-[#1A1A1A] text-sm">Billing</p>
+              </div>
+
+              {!subscription ? (
+                <p className="text-xs text-[#646D7A]">No subscription found for {currentParent.name}.</p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between bg-[#F7F5F0] rounded-xl px-4 py-3 mb-3">
+                    <div>
+                      <p className="text-sm font-medium text-[#1A1A1A] capitalize">{subscription.plan} · {subscription.cycle}</p>
+                      <p className="text-xs text-[#646D7A] mt-0.5">
+                        {subscription.status === 'trialing' && subscription.trialEndsAt &&
+                          `Trial ends ${new Date(subscription.trialEndsAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}`}
+                        {subscription.status === 'active' && subscription.renewsAt &&
+                          `Renews ${new Date(subscription.renewsAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}`}
+                        {subscription.status === 'past_due' && 'Payment issue — please update your card'}
+                        {(subscription.status === 'cancelled' || subscription.status === 'expired') &&
+                          `${subscription.status === 'cancelled' ? 'Cancelled' : 'Expired'}${subscription.endsAt ? ` · access ends ${new Date(subscription.endsAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}` : ''}`}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize flex-shrink-0 ${
+                      subscription.status === 'active' || subscription.status === 'trialing'
+                        ? 'bg-[#059669]/10 text-[#059669]'
+                        : subscription.status === 'past_due'
+                        ? 'bg-[#D97706]/10 text-[#D97706]'
+                        : 'bg-[#DC2626]/10 text-[#DC2626]'
+                    }`}>
+                      {subscription.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <button
+                    onClick={openBillingPortal}
+                    disabled={portalLoading || !subscription}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium bg-[#F7F5F0] border border-[#E5E1D8] text-[#1A1A1A] hover:border-[#1B4D3E] transition-colors disabled:opacity-60"
+                  >
+                    <ExternalLink size={14} />
+                    {portalLoading ? 'Opening…' : 'Manage subscription'}
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Active hours */}

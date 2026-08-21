@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { initializePaddle } from '@paddle/paddle-js'
 import { supabase } from '../lib/supabase'
-import { acceptInvite } from '../lib/api'
+import { acceptInvite, getBillingPlans, type Plan, type Cycle } from '../lib/api'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
@@ -23,6 +24,41 @@ export default function AuthCallback() {
         }
         localStorage.removeItem('companion_invite_token')
       }
+
+      // Picked a plan on the landing page: send them straight to checkout
+      // instead of the dashboard — Setup waits for the subscription webhook
+      const pending = localStorage.getItem('maemate_pending_plan')
+      if (pending) {
+        localStorage.removeItem('maemate_pending_plan')
+        try {
+          const { plan, cycle } = JSON.parse(pending) as { plan: Plan; cycle: Cycle }
+
+          const clientToken = import.meta.env.VITE_PADDLE_CLIENT_TOKEN as string | undefined
+          const env = import.meta.env.VITE_PADDLE_ENV as 'sandbox' | 'production' | undefined
+          const [paddle, billingPlans, { data: { session } }] = await Promise.all([
+            clientToken && env ? initializePaddle({ token: clientToken, environment: env }) : undefined,
+            getBillingPlans(),
+            supabase.auth.getSession(),
+          ])
+
+          const priceId = billingPlans[plan][cycle]
+          if (!paddle || !priceId || !session?.user) {
+            throw new Error('Checkout not available')
+          }
+
+          paddle.Checkout.open({
+            items: [{ priceId, quantity: 1 }],
+            customer: session.user.email ? { email: session.user.email } : undefined,
+            customData: { guardianId: session.user.id, plan, cycle },
+            discountCode: billingPlans.discountCode,
+            settings: { successUrl: `${window.location.origin}/setup?checkout=success` },
+          })
+          return
+        } catch (err) {
+          console.warn('Checkout creation failed, continuing to dashboard:', (err as Error).message)
+        }
+      }
+
       navigate('/dashboard')
     }
 

@@ -1,10 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { db } from '../db/index.js'
-import { parents, guardianParentLinks, companionFacts, reminders, summarySchedules, users, activityLogs } from '../db/schema.js'
-import { eq, and } from 'drizzle-orm'
+import { parents, guardianParentLinks, companionFacts, reminders, summarySchedules, users, activityLogs, subscriptions } from '../db/schema.js'
+import { eq, and, isNull, desc } from 'drizzle-orm'
 import { registerPhone } from '../lib/claw.js'
-import { groqChat, COMPANION_NAME } from '../lib/llm.js'
+import { chat, COMPANION_NAME } from '../lib/llm.js'
 import { sendIMessageCheckin } from '../lib/notifications.js'
 
 const CreateParentBody = z.object({
@@ -66,6 +66,16 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
       })
     }
 
+    // Every parent needs an active subscription — find the most recent one
+    // from checkout that hasn't been linked to a parent yet
+    const pendingSub = await db.query.subscriptions.findFirst({
+      where: and(eq(subscriptions.guardianId, request.userId), isNull(subscriptions.parentId)),
+      orderBy: desc(subscriptions.createdAt),
+    })
+    if (!pendingSub || !['trialing', 'active'].includes(pendingSub.status)) {
+      return reply.status(402).send({ error: 'Complete checkout before adding a companion.' })
+    }
+
     if (guardianPhone) {
       await db.update(users).set({ phone: guardianPhone }).where(eq(users.id, request.userId))
     }
@@ -75,6 +85,8 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
       activeHoursFrom: activeHoursFrom as `${number}:${number}`,
       activeHoursTo: activeHoursTo as `${number}:${number}`,
     }).returning()
+
+    await db.update(subscriptions).set({ parentId: parent.id }).where(eq(subscriptions.id, pendingSub.id))
 
     await db.insert(guardianParentLinks).values({
       guardianId: request.userId,
@@ -167,12 +179,18 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
 
     const factsText = parent.companionFacts.map(f => `${f.label}: ${f.value}`).join(', ') || 'nothing yet'
 
-    const msg = await groqChat([
+    const priorContact = await db.query.activityLogs.findFirst({ where: eq(activityLogs.parentId, parent.id) })
+    const isFirstContact = !priorContact
+
+    const msg = await chat([
       {
         role: 'user',
         content: `You are ${COMPANION_NAME}, a warm friend who texts ${parent.name}, an elderly person you check in on. What you know about them: ${factsText}.
 
-Their guardian asked you to check in on them right now. If you've never spoken before, introduce yourself by name. Write a warm, casual check-in text — 1–2 sentences, like a real friend texting, never robotic. Reply with ONLY the text message, nothing else.`,
+Their guardian asked you to check in on them right now. ${isFirstContact
+          ? `This is the very FIRST message you've ever sent them — briefly introduce yourself by name and mention their family asked you to check in and that you'll share how they're doing with them, warmly, like a friend being introduced, then move into a light easy question.`
+          : `Write a warm, casual check-in text.`
+        } 1–2 sentences, like a real friend texting, never robotic. Reply with ONLY the text message, nothing else.`,
       },
     ], { temperature: 0.8 })
 

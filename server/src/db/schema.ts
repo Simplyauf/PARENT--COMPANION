@@ -9,6 +9,9 @@ export const sentimentEnum = pgEnum('sentiment', ['positive', 'neutral', 'alert'
 export const activityTypeEnum = pgEnum('activity_type', ['call', 'message'])
 export const directionEnum = pgEnum('direction', ['inbound', 'outbound'])
 export const summaryFreqEnum = pgEnum('summary_freq', ['weekly', 'monthly'])
+export const subPlanEnum = pgEnum('sub_plan', ['basic', 'family'])
+export const subCycleEnum = pgEnum('sub_cycle', ['monthly', 'yearly'])
+export const subStatusEnum = pgEnum('sub_status', ['trialing', 'active', 'past_due', 'cancelled', 'expired'])
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
@@ -95,6 +98,25 @@ export const scheduledActions = pgTable('scheduled_actions', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+// One subscription per parent ("one companion, one person" pricing). Created
+// with parentId=null right after checkout, then linked to the
+// parent the guardian creates next in the Setup wizard.
+export const subscriptions = pgTable('subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  guardianId: uuid('guardian_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  parentId: uuid('parent_id').references(() => parents.id, { onDelete: 'set null' }).unique(),
+  plan: subPlanEnum('plan').notNull(),
+  cycle: subCycleEnum('cycle').notNull(),
+  status: subStatusEnum('status').notNull().default('trialing'),
+  paddleSubscriptionId: text('paddle_subscription_id').unique(),
+  paddleCustomerId: text('paddle_customer_id'),
+  trialEndsAt: timestamp('trial_ends_at'),
+  renewsAt: timestamp('renews_at'),
+  endsAt: timestamp('ends_at'), // set when cancelled — stays active until this date
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
 export const invites = pgTable('invites', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull(),
@@ -111,9 +133,10 @@ export const invites = pgTable('invites', {
 export const usersRelations = relations(users, ({ many }) => ({
   guardianLinks: many(guardianParentLinks),
   sentInvites: many(invites),
+  subscriptions: many(subscriptions),
 }))
 
-export const parentsRelations = relations(parents, ({ many }) => ({
+export const parentsRelations = relations(parents, ({ many, one }) => ({
   guardianLinks: many(guardianParentLinks),
   activityLogs: many(activityLogs),
   companionFacts: many(companionFacts),
@@ -121,6 +144,12 @@ export const parentsRelations = relations(parents, ({ many }) => ({
   summarySchedule: many(summarySchedules),
   invites: many(invites),
   scheduledActions: many(scheduledActions),
+  subscription: one(subscriptions, { fields: [parents.id], references: [subscriptions.parentId] }),
+}))
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+  guardian: one(users, { fields: [subscriptions.guardianId], references: [users.id] }),
+  parent: one(parents, { fields: [subscriptions.parentId], references: [parents.id] }),
 }))
 
 export const scheduledActionsRelations = relations(scheduledActions, ({ one }) => ({

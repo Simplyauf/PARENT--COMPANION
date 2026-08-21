@@ -7,13 +7,21 @@ export default function Auth() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const role = (location.state as { role?: string })?.role ?? 'guardian'
+  const state = location.state as { role?: string; plan?: string; cycle?: string } | null
+  const role = state?.role ?? 'guardian'
 
   // Co-guardian invite: stash the token so it survives the magic-link roundtrip
   useEffect(() => {
     const invite = searchParams.get('invite')
     if (invite) localStorage.setItem('companion_invite_token', invite)
   }, [searchParams])
+
+  // Picked a plan on the landing page: stash it the same way, for the same reason
+  useEffect(() => {
+    if (state?.plan && state?.cycle) {
+      localStorage.setItem('maemate_pending_plan', JSON.stringify({ plan: state.plan, cycle: state.cycle }))
+    }
+  }, [state])
 
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)

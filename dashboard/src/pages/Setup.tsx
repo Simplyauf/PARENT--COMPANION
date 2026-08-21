@@ -1,7 +1,14 @@
-import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Plus, X, MessageCircle, Mail, AlertCircle } from 'lucide-react'
-import { createParent } from '../lib/api'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Plus, X, MessageCircle, Mail, AlertCircle, Heart, Users, Check } from 'lucide-react'
+import { initializePaddle, CheckoutEventNames, type Paddle } from '@paddle/paddle-js'
+import { createParent, getBillingPlans, getPendingSubscription, type ApiBillingPlans, type Plan, type Cycle } from '../lib/api'
+import { supabase } from '../lib/supabase'
+
+const BILLING_PLANS: { id: Plan; name: string; icon: typeof Heart; monthly: number; yearly: number; blurb: string }[] = [
+  { id: 'basic', name: 'Basic', icon: Heart, monthly: 12, yearly: 120, blurb: 'One companion, one person' },
+  { id: 'family', name: 'Family', icon: Users, monthly: 22, yearly: 216, blurb: 'Up to 5 guardians, no daily limit' },
+]
 
 const TIMEZONES = [
   { value: 'America/New_York', label: 'America/New_York (EST)' },
@@ -13,11 +20,114 @@ const TIMEZONES = [
   { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
 ]
 
+type BillingGate = 'checking' | 'polling' | 'poll-timeout' | 'picking-plan' | 'starting-checkout' | 'ready'
+
 export default function Setup() {
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const role = (location.state as { role: string })?.role ?? 'guardian'
   const isGuardian = role === 'guardian'
+
+  // ─── Billing gate: every parent needs a subscription before the form shows ──
+  const [billingGate, setBillingGate] = useState<BillingGate>('checking')
+  const [pickedPlan, setPickedPlan] = useState<Plan>('basic')
+  const [pickedCycle, setPickedCycle] = useState<Cycle>('monthly')
+  const [billingError, setBillingError] = useState<string | null>(null)
+  const pollTries = useRef(0)
+
+  const paddleRef = useRef<Paddle | null>(null)
+  const billingPlansRef = useRef<ApiBillingPlans | null>(null)
+
+  const checkSubscription = async () => {
+    try {
+      const { ready } = await getPendingSubscription()
+      if (ready) { setBillingGate('ready'); return true }
+    } catch { /* treat as not-ready */ }
+    return false
+  }
+
+  useEffect(() => {
+    const clientToken = import.meta.env.VITE_PADDLE_CLIENT_TOKEN as string | undefined
+    const env = import.meta.env.VITE_PADDLE_ENV as 'sandbox' | 'production' | undefined
+    if (clientToken && env) {
+      initializePaddle({
+        token: clientToken,
+        environment: env,
+        eventCallback: (event) => {
+          // User closed the overlay or something went wrong opening it —
+          // un-stick the "Starting checkout…" button so they can retry.
+          if (event.name === CheckoutEventNames.CHECKOUT_CLOSED || event.name === CheckoutEventNames.CHECKOUT_ERROR) {
+            setBillingGate(g => g === 'starting-checkout' ? 'picking-plan' : g)
+            if (event.name === CheckoutEventNames.CHECKOUT_ERROR) {
+              setBillingError('Something went wrong opening checkout — try again')
+            }
+          }
+        },
+      }).then(p => {
+        if (p) paddleRef.current = p
+      })
+    }
+    getBillingPlans().then(plans => { billingPlansRef.current = plans }).catch(() => { /* surfaced at checkout time */ })
+  }, [])
+
+  useEffect(() => {
+    (async () => {
+      if (await checkSubscription()) return
+
+      if (searchParams.get('checkout') === 'success') {
+        // Just came back from Paddle checkout — webhook may take a few seconds
+        setBillingGate('polling')
+        const interval = setInterval(async () => {
+          pollTries.current += 1
+          if (await checkSubscription()) { clearInterval(interval); return }
+          if (pollTries.current >= 10) {
+            clearInterval(interval)
+            setBillingGate('poll-timeout')
+          }
+        }, 2000)
+        return () => clearInterval(interval)
+      }
+
+      // No checkout in flight — show the plan picker (fresh onboarding fallback,
+      // or "add another parent" which always needs its own subscription)
+      setBillingGate('picking-plan')
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const startCheckout = async () => {
+    setBillingError(null)
+
+    const paddle = paddleRef.current
+    if (!paddle) {
+      setBillingError('Checkout is still loading — try again in a moment')
+      return
+    }
+
+    const priceId = billingPlansRef.current?.[pickedPlan]?.[pickedCycle]
+    if (!priceId) {
+      setBillingError('This plan is not available right now — try again in a moment')
+      return
+    }
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) {
+      setBillingError('Not signed in — try refreshing the page')
+      return
+    }
+
+    setBillingGate('starting-checkout')
+    paddle.Checkout.open({
+      items: [{ priceId, quantity: 1 }],
+      customer: session.user.email ? { email: session.user.email } : undefined,
+      customData: { guardianId: session.user.id, plan: pickedPlan, cycle: pickedCycle },
+      discountCode: billingPlansRef.current?.discountCode,
+      settings: {
+        successUrl: `${window.location.origin}/setup?checkout=success`,
+      },
+    })
+  }
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -57,6 +167,113 @@ export default function Setup() {
       setError((err as Error).message || 'Something went wrong — try again')
       setSubmitting(false)
     }
+  }
+
+  // ─── Billing gate screens — shown before the parent form ────────────────────
+  if (billingGate === 'checking' || billingGate === 'polling') {
+    return (
+      <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center px-4">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-[#1B4D3E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-[#646D7A] text-sm">
+            {billingGate === 'polling' ? 'Confirming your subscription…' : 'Loading…'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (billingGate === 'poll-timeout') {
+    return (
+      <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center px-4">
+        <div className="text-center max-w-sm">
+          <AlertCircle size={24} className="text-[#D97706] mx-auto mb-3" />
+          <p className="text-[#1A1A1A] text-sm mb-1">Still confirming your subscription</p>
+          <p className="text-[#646D7A] text-xs mb-4">This can take a few extra seconds. If it doesn't resolve, your payment may not have completed.</p>
+          <button
+            onClick={() => { pollTries.current = 0; setBillingGate('checking'); checkSubscription().then(ok => !ok && setBillingGate('picking-plan')) }}
+            className="text-[#1B4D3E] text-sm font-medium hover:underline"
+          >
+            Check again
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (billingGate === 'picking-plan' || billingGate === 'starting-checkout') {
+    return (
+      <div className="min-h-screen bg-[#F7F5F0] px-4 py-10">
+        <div className="w-full max-w-md mx-auto">
+          <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[#646D7A] text-sm mb-8 hover:text-[#1A1A1A] transition-colors">
+            <ArrowLeft size={16} /> Back
+          </button>
+
+          <div className="mb-6">
+            <p className="text-[#1B4D3E] font-medium text-sm tracking-widest uppercase mb-2">Choose a plan</p>
+            <h2 className="text-3xl text-[#1A1A1A]" style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}>
+              One more companion, one more plan
+            </h2>
+            <p className="text-[#646D7A] text-sm mt-2">Each parent gets their own subscription — 7-day free trial, cancel anytime.</p>
+          </div>
+
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex bg-white border border-[#E5E1D8] rounded-full p-1">
+              {(['monthly', 'yearly'] as const).map(c => (
+                <button
+                  key={c}
+                  onClick={() => setPickedCycle(c)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors capitalize ${pickedCycle === c ? 'bg-[#1B4D3E] text-white' : 'text-[#646D7A]'}`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 mb-6">
+            {BILLING_PLANS.map(p => {
+              const price = pickedCycle === 'monthly' ? p.monthly : p.yearly
+              const selected = pickedPlan === p.id
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setPickedPlan(p.id)}
+                  className={`w-full text-left bg-white border rounded-2xl p-5 flex items-center gap-4 transition-all ${selected ? 'border-[#1B4D3E] ring-1 ring-[#1B4D3E]' : 'border-[#E5E1D8] hover:border-[#1B4D3E]/50'}`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${selected ? 'bg-[#1B4D3E]' : 'bg-[#F7F5F0]'}`}>
+                    <p.icon size={18} className={selected ? 'text-white' : 'text-[#1B4D3E]'} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-[#1A1A1A] text-sm">{p.name}</p>
+                    <p className="text-xs text-[#646D7A]">{p.blurb}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-[#1A1A1A]">${price}<span className="text-xs font-normal text-[#646D7A]">/{pickedCycle === 'monthly' ? 'mo' : 'yr'}</span></p>
+                  </div>
+                  {selected && <Check size={16} className="text-[#1B4D3E] flex-shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+
+          {billingError && (
+            <div className="flex items-start gap-2 bg-[#DC2626]/5 border border-[#DC2626]/20 rounded-xl px-4 py-3 mb-4">
+              <AlertCircle size={15} className="text-[#DC2626] flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-[#DC2626]">{billingError}</p>
+            </div>
+          )}
+
+          <button
+            onClick={startCheckout}
+            disabled={billingGate === 'starting-checkout'}
+            className="w-full bg-[#1B4D3E] text-white rounded-xl py-3.5 text-sm font-medium hover:bg-[#2D6A56] transition-colors disabled:opacity-60"
+          >
+            {billingGate === 'starting-checkout' ? 'Starting checkout…' : 'Continue to checkout'}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -5,7 +5,7 @@
 import { db } from '../db/index.js'
 import { activityLogs, companionFacts, reminders, scheduledActions } from '../db/schema.js'
 import { eq, desc, and, ne, isNull, inArray } from 'drizzle-orm'
-import { groqChat, COMPANION_NAME, type ChatMessage, type ToolDef, type ToolCall } from './llm.js'
+import { chat, COMPANION_NAME, type ChatMessage, type ToolDef, type ToolCall } from './llm.js'
 import { sendMessage, sendReaction, type ReactionType } from './claw.js'
 
 const MAX_TOOL_ROUNDS = 4
@@ -113,8 +113,18 @@ async function executeTool(parentId: string, call: ToolCall): Promise<string> {
 
 // ─── Persona ──────────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(parent: Parent, facts: string, remindersText: string, localTime: string, pendingFollowups: string) {
+type SituationFlags = { emergency: boolean; scam: boolean }
+
+function buildSystemPrompt(parent: Parent, facts: string, remindersText: string, localTime: string, pendingFollowups: string, flags?: SituationFlags) {
   return `You are ${COMPANION_NAME} — a warm, genuine friend who checks in on ${parent.name} by text message. You text like a real person, never like a bot or customer service. If they ask who you are, you're ${COMPANION_NAME}, a friend their family asked to keep them company.
+
+WHAT YOU CANNOT DO: you're a texting and voice-note companion only — you cannot place phone calls, cannot contact emergency services, and cannot physically do anything in the real world. If something is genuinely serious, tell them clearly and calmly to call emergency services themselves or reach out to someone nearby — NEVER say things like "calling now" or "help is on the way" or imply you're taking real-world action, because that would be a false promise.
+
+YOU'RE NOT A DOCTOR OR FINANCIAL ADVISOR: never suggest what medication to take or how much — always point them to their doctor or pharmacist. Never advise on money decisions or big purchases — gently encourage checking with family first, same as with scams.
+${flags?.emergency ? `
+🚨 URGENT — WHAT THEY JUST SAID WAS FLAGGED AS A POSSIBLE REAL EMERGENCY (a fall, chest pain, trouble breathing, or similar). This is your top priority this message. Stay calm and direct, not panicked or dramatic — a steady friend, not a siren. Ask if they're safe RIGHT NOW and whether anyone is with them, and clearly urge them to call emergency services themselves (or a neighbor/family member) if it feels serious. If they downplay it, gently confirm they're really okay before moving to anything else — don't just chat normally past this. Don't exaggerate beyond what they told you, but don't let it go either.` : ''}
+${flags?.scam ? `
+⚠️ WHAT THEY JUST SAID WAS FLAGGED AS A POSSIBLE SCAM ATTEMPT. Your first priority: gently but firmly urge them not to send anything, share any code, or click any link until family confirms it's real ("please don't send them anything yet — let's have your family double-check first, these things are often fake"). Stay calm and warm, never alarmist. Their family is alerted automatically; you don't need to mention that unless it reassures them.` : ''}
 
 HOW YOU TEXT:
 - Short. 1–2 sentences, like a real text message. Never lists, never headers, never formal sign-offs.
@@ -125,7 +135,7 @@ HOW YOU TEXT:
 - Reply in the language THEY use. If they write or speak Yoruba, Hausa, Igbo, pidgin, or anything else, reply naturally in that same language.
 - If they mention something happening later (appointment, visit, repair), use schedule_followup so you can ask about it afterwards — that's what a good friend does.
 - If you asked about something before and they ignored it or changed the subject, let it go — never drag them back to a topic they didn't engage with. Conversations move forward.
-- SCAM PROTECTION: if they mention anyone asking for money, bank details, card numbers, OTP/verification codes, gift cards, a "locked account" call, a prize win, or urgent payment pressure — your FIRST priority is gently but firmly urging them not to send anything, share any code, or click any link until family confirms it's real ("please don't send them anything yet — let's have your family double-check first, these things are often fake"). Stay calm and warm, never alarmist. Their family is alerted automatically; you don't need to mention that unless it reassures them.
+- SCAM AWARENESS: even when not flagged above, if you independently notice someone asking them for money, bank details, OTP codes, or applying urgent payment pressure, apply the same caution — urge them to check with family before sending anything.
 - If they mention a lasting personal detail, use save_fact so you never forget it.
 - If they mention a medication or recurring thing to track, use create_reminder.
 
@@ -212,7 +222,7 @@ export async function compactFacts(parentId: string): Promise<void> {
   const old = all.slice(FACT_WINDOW)
   const oldText = old.map(f => `- ${f.label}: ${f.value}`).join('\n')
 
-  const msg = await groqChat([
+  const msg = await chat([
     {
       role: 'user',
       content: `These are older memory notes a companion keeps about an elderly person. Compact them:
@@ -262,7 +272,7 @@ async function buildHistory(parentId: string, excludeLogId?: string): Promise<Ch
 
 // ─── The agent turn ───────────────────────────────────────────────────────────
 
-export async function runAgentTurn(parent: Parent, inboundText: string, excludeLogId?: string, inboundMessageId?: string): Promise<string | null> {
+export async function runAgentTurn(parent: Parent, inboundText: string, excludeLogId?: string, inboundMessageId?: string, flags?: SituationFlags): Promise<string | null> {
   const [facts, parentReminders, history, pendingActions] = await Promise.all([
     // Cap what goes into the prompt — unbounded memory dilutes attention
     db.query.companionFacts.findMany({
@@ -289,7 +299,7 @@ export async function runAgentTurn(parent: Parent, inboundText: string, excludeL
   }).format(new Date())
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt(parent, factsText, remindersText, localTime, pendingText) },
+    { role: 'system', content: buildSystemPrompt(parent, factsText, remindersText, localTime, pendingText, flags) },
     ...history,
     { role: 'user', content: inboundText },
   ]
@@ -297,7 +307,7 @@ export async function runAgentTurn(parent: Parent, inboundText: string, excludeL
   // Tool loop: keep going until the model produces a plain text reply
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     const useTools = round < MAX_TOOL_ROUNDS // force a text answer on the last round
-    const msg = await groqChat(messages, useTools ? { tools } : {})
+    const msg = await chat(messages, useTools ? { tools } : {})
 
     if (msg.tool_calls?.length) {
       messages.push({ role: 'assistant', content: msg.content, tool_calls: msg.tool_calls })

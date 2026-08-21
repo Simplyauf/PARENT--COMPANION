@@ -147,6 +147,7 @@ async function handleMessage(msg: Record<string, unknown>) {
           dispatchAlert({
             guardianEmail: l.guardian.email,
             guardianPhone: l.guardian.phone ?? undefined,
+            parentPhone: l.parent.phone,
             notifyVia: l.notifyVia,
             parentName: l.parent.name,
             summary: analysis.scam
@@ -160,7 +161,10 @@ async function handleMessage(msg: Record<string, unknown>) {
 
     // Agentic reply — the companion talks back, remembers, and schedules follow-ups
     try {
-      const reply = await runAgentTurn(parent, text, inboundLog.id, inboundMessageId)
+      const reply = await runAgentTurn(parent, text, inboundLog.id, inboundMessageId, {
+        emergency: analysis.emergency === true,
+        scam: analysis.scam === true,
+      })
       if (reply) console.log(`[agent] replied to ${parent.name}: "${reply.slice(0, 80)}"`)
     } catch (err) {
       console.error('[agent] reply failed:', (err as Error).message)

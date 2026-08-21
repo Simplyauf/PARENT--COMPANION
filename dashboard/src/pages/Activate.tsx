@@ -3,10 +3,10 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { MessageCircle, ArrowLeft, Check, AlertCircle } from 'lucide-react'
 import { requestCheckin } from '../lib/api'
 
-const AGENT_PHONE = (import.meta.env.VITE_AGENT_PHONE as string) ?? '+12053690702'
+const AGENT_PHONE = (import.meta.env.VITE_AGENT_PHONE as string) ?? '+14153238173'
 
 function formatPhone(p: string) {
-  // +12053690702 → +1 (205) 369-0702
+  // +14153238173 → +1 (415) 323-8173
   const m = p.match(/^\+1(\d{3})(\d{3})(\d{4})$/)
   return m ? `+1 (${m[1]}) ${m[2]}-${m[3]}` : p
 }

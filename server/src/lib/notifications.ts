@@ -13,11 +13,14 @@ function getResend() {
 export type AlertPayload = {
   guardianEmail: string
   guardianPhone?: string
+  parentPhone: string
   notifyVia: 'imessage' | 'gmail'
   parentName: string
   summary: string
   isEmergency: boolean
 }
+
+const normalizePhone = (p: string) => p.replace(/[^\d+]/g, '')
 
 export type SummaryPayload = {
   guardianEmail: string
@@ -138,9 +141,15 @@ export async function dispatchAlert(payload: AlertPayload) {
     ? `🚨 Emergency alert for ${payload.parentName}: ${payload.summary}`
     : `⚠️ Check-in alert for ${payload.parentName}: ${payload.summary}`
 
-  if (payload.notifyVia === 'imessage' && payload.guardianPhone) {
+  // A guardian whose alert number IS the parent's number would get the alert
+  // dropped into the same thread as Mae's own conversation — reads as Mae
+  // talking to herself. Force email for that one guardian instead.
+  const sameThread = payload.guardianPhone && normalizePhone(payload.guardianPhone) === normalizePhone(payload.parentPhone)
+
+  if (payload.notifyVia === 'imessage' && payload.guardianPhone && !sameThread) {
     await sendIMessageAlert(payload.guardianPhone, msg)
   } else {
+    if (sameThread) console.warn(`[notifications] guardian phone matches parent phone for ${payload.parentName} — routing alert to email instead`)
     await sendAlertEmail(payload)
   }
 }

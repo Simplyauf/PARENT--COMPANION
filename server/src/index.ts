@@ -6,6 +6,7 @@ import { webhookRoutes } from './routes/webhooks.js'
 import { parentRoutes } from './routes/parents.js'
 import { guardianRoutes } from './routes/guardians.js'
 import { dashboardRoutes } from './routes/dashboard.js'
+import { subscriptionRoutes } from './routes/subscriptions.js'
 import { startHeartbeat } from './heartbeat.js'
 import { connectClaw } from './lib/claw.js'
 
@@ -15,6 +16,20 @@ const fastify = Fastify({
       ? { target: 'pino-pretty', options: { colorize: true } }
       : undefined,
   },
+})
+
+// Retain the raw request body alongside the parsed JSON — Paddle webhook
+// signatures are HMACs over the exact bytes received, which the default JSON
+// parser discards.
+fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+  const buf = body as Buffer
+  req.rawBody = buf
+  if (buf.length === 0) return done(null, undefined)
+  try {
+    done(null, JSON.parse(buf.toString('utf8')))
+  } catch (err) {
+    done(err as Error, undefined)
+  }
 })
 
 // ─── Plugins ──────────────────────────────────────────────────────────────────
@@ -32,6 +47,7 @@ await fastify.register(webhookRoutes)
 await fastify.register(parentRoutes)
 await fastify.register(guardianRoutes)
 await fastify.register(dashboardRoutes)
+await fastify.register(subscriptionRoutes)
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 

@@ -1,17 +1,19 @@
 import { db } from './db/index.js'
-import { activityLogs, parents, companionFacts, reminders, scheduledActions, guardianParentLinks } from './db/schema.js'
+import { activityLogs, parents, companionFacts, reminders, scheduledActions, guardianParentLinks, subscriptions } from './db/schema.js'
 import { eq, and, gte, lte, lt, isNull, desc, type InferSelectModel } from 'drizzle-orm'
-import { decideHeartbeat, groqChat, COMPANION_NAME } from './lib/llm.js'
+import { decideHeartbeat, chat, COMPANION_NAME } from './lib/llm.js'
 import { sendIMessageCheckin, dispatchAlert } from './lib/notifications.js'
 import { compactFacts } from './lib/agent.js'
+import { DAILY_CONTACT_CAP, type Plan } from './lib/plans.js'
 
 const HEARTBEAT_INTERVAL_MS = 45 * 60 * 1000 // 45 minutes
-const MAX_CONTACTS_PER_DAY = 3
+const LIVE_SUB_STATUSES = ['trialing', 'active', 'past_due'] // past_due keeps running — provider is still retrying the card
 const FOLLOWUP_EXPIRY_MS = 48 * 60 * 60 * 1000   // stale follow-ups die after 48h overdue
 const NO_REPLY_STREAK = 3                         // stop initiating after 3 unanswered messages
 const GUARDIAN_ALERT_AFTER_H = 12                 // hours of silence after 3rd msg → tell guardians
 const RETRY_AFTER_H = 72                          // days of silence before one gentle re-attempt
 const PAUSE_REMINDER_AFTER_MS = 4 * 24 * 60 * 60 * 1000
+const RECENT_ACTIVITY_COOLDOWN_MS = 20 * 60 * 1000 // never initiate within 20 min of any activity
 
 async function tick() {
   console.log(`[heartbeat] tick at ${new Date().toISOString()}`)
@@ -22,7 +24,7 @@ async function tick() {
 
   const allParents = await db.query.parents.findMany({
     where: eq(parents.isActive, true),
-    with: { companionFacts: true, reminders: true },
+    with: { companionFacts: true, reminders: true, subscription: true },
   })
 
   await Promise.allSettled(
@@ -75,7 +77,7 @@ async function runDueFollowups(): Promise<Set<string>> {
 
     const topics = actions.map(a => a.topic).join('; ')
     try {
-      const msg = await groqChat([
+      const msg = await chat([
         {
           role: 'user',
           content: `You are ${COMPANION_NAME}, a warm friend texting ${parent.name}, an elderly person you check in on. Earlier you promised yourself to follow up about: "${topics}".
@@ -117,10 +119,21 @@ Write ONE follow-up text now covering ${actions.length > 1 ? 'these (they overla
 type ParentWithContext = InferSelectModel<typeof parents> & {
   companionFacts: InferSelectModel<typeof companionFacts>[]
   reminders: InferSelectModel<typeof reminders>[]
+  subscription: InferSelectModel<typeof subscriptions> | null
 }
 
 async function processParent(parent: ParentWithContext) {
   const now = new Date()
+
+  // No live subscription (cancelled/expired, or never linked) — Mae stops
+  // initiating entirely. Replies are handled in claw.ts and aren't gated here,
+  // matching the same "pause still lets them reply" philosophy.
+  if (!parent.subscription || !LIVE_SUB_STATUSES.includes(parent.subscription.status)) {
+    console.log(`[heartbeat] ${parent.name} — no active subscription, skipping`)
+    return
+  }
+  const plan = parent.subscription.plan as Plan
+  const maxContactsPerDay = DAILY_CONTACT_CAP[plan]
 
   // Guardian paused Mae for this parent — no initiations (replies still work).
   // After 4 days paused, remind guardians once that they can unpause.
@@ -131,7 +144,7 @@ async function processParent(parent: ParentWithContext) {
       now.getTime() - parent.pausedAt.getTime() >= PAUSE_REMINDER_AFTER_MS
     ) {
       const days = Math.round((now.getTime() - parent.pausedAt.getTime()) / 86_400_000)
-      await alertGuardians(parent.id, parent.name,
+      await alertGuardians(parent.id, parent.name, parent.phone,
         `${COMPANION_NAME}'s messages to ${parent.name} have been paused for ${days} days now. You can resume them anytime from the dashboard.`)
       await db.update(parents).set({ pauseReminderSentAt: now }).where(eq(parents.id, parent.id))
     }
@@ -156,6 +169,24 @@ async function processParent(parent: ParentWithContext) {
 
   if (nowMinutes < fromMinutes || nowMinutes > toMinutes) {
     console.log(`[heartbeat] ${parent.name} — outside active hours (${localTime})`)
+    return
+  }
+
+  // Recent activity (any direction) — fetched once, used for both the cooldown
+  // guard below and the unanswered-streak logic further down
+  const recentLogs = await db.query.activityLogs.findMany({
+    where: eq(activityLogs.parentId, parent.id),
+    orderBy: desc(activityLogs.createdAt),
+    limit: 10,
+  })
+
+  // Hard cooldown: never initiate on top of a conversation that just happened.
+  // This is a code-level guard rather than relying on the model to judge
+  // "contacted recently enough" — it's what stops a server restart (heartbeat
+  // fires immediately on startup) from barging into an active exchange.
+  if (recentLogs[0] && now.getTime() - recentLogs[0].createdAt.getTime() < RECENT_ACTIVITY_COOLDOWN_MS) {
+    const minsAgo = Math.round((now.getTime() - recentLogs[0].createdAt.getTime()) / 60000)
+    console.log(`[heartbeat] ${parent.name} — activity ${minsAgo}m ago, within cooldown, skipping`)
     return
   }
 
@@ -191,11 +222,6 @@ async function processParent(parent: ParentWithContext) {
   // Don't-pester policy: count consecutive outbound messages since their last
   // reply. At 3 unanswered we stop initiating; 12h later guardians get a heads-up;
   // after 3 days of silence one gentle, zero-pressure re-attempt is allowed.
-  const recentLogs = await db.query.activityLogs.findMany({
-    where: eq(activityLogs.parentId, parent.id),
-    orderBy: desc(activityLogs.createdAt),
-    limit: 10,
-  })
   let unanswered = 0
   let lastOutboundAt: Date | null = null
   for (const l of recentLogs) {
@@ -208,7 +234,7 @@ async function processParent(parent: ParentWithContext) {
     const hoursSilent = (now.getTime() - lastOutboundAt.getTime()) / 3_600_000
 
     if (hoursSilent >= GUARDIAN_ALERT_AFTER_H && !parent.noReplyAlertedAt) {
-      const alerted = await alertGuardians(parent.id, parent.name,
+      const alerted = await alertGuardians(parent.id, parent.name, parent.phone,
         `${parent.name} hasn't responded to ${COMPANION_NAME}'s last ${unanswered} messages. Might be worth checking in personally.`)
       if (alerted) {
         await db.update(parents).set({ noReplyAlertedAt: now }).where(eq(parents.id, parent.id))
@@ -233,11 +259,12 @@ async function processParent(parent: ParentWithContext) {
     activeHoursFrom: parent.activeHoursFrom,
     activeHoursTo: parent.activeHoursTo,
     contactsToday: initiatedToday,
-    maxContactsPerDay: MAX_CONTACTS_PER_DAY,
+    maxContactsPerDay,
     todayLogs: logsForContext,
     facts: parent.companionFacts.map(f => ({ label: f.label, value: f.value })),
     reminders: parent.reminders.map(r => r.text),
     unansweredStreak: unanswered,
+    isFirstContact: recentLogs.length === 0,
   })
 
   console.log(`[heartbeat] ${parent.name}: ${decision.action} — ${decision.reason}`)
@@ -258,7 +285,7 @@ async function processParent(parent: ParentWithContext) {
 
 // Notify every guardian of a parent (respecting each one's channel preference).
 // Returns false when the parent has no guardians — nothing is sent to anyone.
-async function alertGuardians(parentId: string, parentName: string, summary: string): Promise<boolean> {
+async function alertGuardians(parentId: string, parentName: string, parentPhone: string, summary: string): Promise<boolean> {
   const links = await db.query.guardianParentLinks.findMany({
     where: eq(guardianParentLinks.parentId, parentId),
     with: { guardian: true },
@@ -269,6 +296,7 @@ async function alertGuardians(parentId: string, parentName: string, summary: str
     await dispatchAlert({
       guardianEmail: link.guardian.email,
       guardianPhone: link.guardian.phone ?? undefined,
+      parentPhone,
       notifyVia: link.notifyVia,
       parentName,
       summary,

@@ -157,3 +157,35 @@ export const acceptInvite = (token: string) =>
 
 export const removeGuardian = (parentId: string, guardianId: string) =>
   api<{ ok: true }>(`/api/guardians/${parentId}/${guardianId}`, { method: 'DELETE' })
+
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+export type Plan = 'basic' | 'family'
+export type Cycle = 'monthly' | 'yearly'
+
+export type ApiSubscription = {
+  plan: Plan
+  cycle: Cycle
+  status: 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired'
+  trialEndsAt: string | null
+  renewsAt: string | null
+  endsAt: string | null
+}
+
+export type ApiBillingPlans = {
+  basic: { monthly?: string; yearly?: string }
+  family: { monthly?: string; yearly?: string }
+  discountCode?: string
+}
+
+export const getBillingPlans = () =>
+  api<ApiBillingPlans>('/api/billing/plans')
+
+export const getPendingSubscription = () =>
+  api<{ ready: boolean; plan?: Plan; cycle?: Cycle }>('/api/subscriptions/pending')
+
+export const getSubscription = (parentId: string) =>
+  api<ApiSubscription>(`/api/subscriptions/${parentId}`)
+
+export const getCustomerPortal = (parentId: string) =>
+  api<{ url: string }>(`/api/subscriptions/${parentId}/portal`, { method: 'POST', body: '{}' })
