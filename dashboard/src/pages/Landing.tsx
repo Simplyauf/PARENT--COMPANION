@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shield, User, ArrowRight, Check, ChevronDown, Heart, Users, Sparkles, Globe2, Smartphone } from 'lucide-react'
+import { Shield, User, ArrowRight, Check, ChevronDown, Heart, Users, Sparkles, Globe2, Smartphone, Mail, MessageCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import HeroPhone from '../components/HeroPhone'
 
 const TRUST_SIGNALS = [
   { icon: Smartphone, text: 'No app for them to install' },
@@ -101,23 +102,29 @@ export default function Landing() {
       <nav className="sticky top-0 z-10 bg-bg/90 backdrop-blur border-b border-border">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <img src="/logo_3.png" alt="MaeMate" width={400} height={139} className="h-8 w-auto" />
-          <div className="flex items-center gap-5 text-sm">
+          <div className="flex items-center gap-6 text-sm">
             <button onClick={() => scrollTo('pricing')} className="text-muted hover:text-text transition-colors hidden sm:inline">
               Pricing
             </button>
             <button onClick={() => scrollTo('faq')} className="text-muted hover:text-text transition-colors hidden sm:inline">
               FAQ
             </button>
-            <button onClick={() => navigate('/auth')} className="text-primary font-medium hover:underline">
+            <button onClick={() => navigate('/auth')} className="text-text font-semibold hover:text-primary transition-colors">
               Sign in
+            </button>
+            <button
+              onClick={() => scrollTo('hero-select')}
+              className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors"
+            >
+              Get Started
             </button>
           </div>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="flex flex-col items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md">
+      <section className="flex flex-col items-center justify-center px-4 py-12 lg:py-20">
+        <div className="w-full max-w-md lg:max-w-5xl">
           {signedIn && (
             <button
               onClick={() => navigate('/dashboard')}
@@ -128,76 +135,74 @@ export default function Landing() {
             </button>
           )}
 
-          <div className="text-center mb-6">
-            <div className="flex justify-center mb-4">
-              <img
-                src="/hero.webp"
-                alt="Elderly people using their phones"
-                width={640}
-                height={640}
-                className="w-full max-w-xs object-contain max-h-52"
-              />
+          <div className="lg:grid lg:grid-cols-2 lg:gap-16 lg:items-center">
+            <div className="flex justify-center mb-6 lg:mb-0 lg:order-2">
+              <HeroPhone />
             </div>
 
-            <h1
-              className="text-4xl text-text leading-tight mb-3"
-              style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}
-            >
-              Peace of mind,<br />
-              <em style={{ fontStyle: 'italic' }}>one call away.</em>
-            </h1>
-            <p className="text-muted text-sm leading-relaxed">
-              An AI companion that checks in on your loved ones so you don't have to worry.
-            </p>
+            <div className="lg:order-1">
+              <div className="text-center lg:text-left mb-6">
+                <h1
+                  className="text-4xl lg:text-5xl text-text leading-tight mb-3"
+                  style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}
+                >
+                  Peace of mind,<br />
+                  <em style={{ fontStyle: 'italic' }}>one call away.</em>
+                </h1>
+                <p className="text-muted text-sm lg:text-base leading-relaxed lg:max-w-sm">
+                  An AI companion that checks in on your loved ones so you don't have to worry.
+                </p>
+              </div>
+
+              <p id="hero-select" className="text-center lg:text-left text-text font-medium mb-3 scroll-mt-24">
+                Who is setting up this companion?
+              </p>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => select('guardian')}
+                  className="w-full bg-surface border border-border rounded-xl p-5 text-left flex items-center gap-4 hover:border-primary hover:shadow-sm transition-all duration-200 group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-bg flex items-center justify-center group-hover:bg-primary transition-colors">
+                    <Shield size={18} className="text-primary group-hover:text-white transition-colors" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-text text-sm">I am a Guardian</p>
+                    <p className="text-muted text-xs mt-0.5">Setting this up for a family member</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => select('elder')}
+                  className="w-full bg-surface border border-border rounded-xl p-5 text-left flex items-center gap-4 hover:border-primary hover:shadow-sm transition-all duration-200 group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-bg flex items-center justify-center group-hover:bg-primary transition-colors">
+                    <User size={18} className="text-primary group-hover:text-white transition-colors" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-text text-sm">I am an Older Adult</p>
+                    <p className="text-muted text-xs mt-0.5">Setting this up for myself</p>
+                  </div>
+                </button>
+              </div>
+
+              <p className="text-center lg:text-left text-muted text-xs mt-8">
+                Already have an account?{' '}
+                <button onClick={() => navigate('/auth')} className="text-primary font-medium hover:underline">
+                  Sign in
+                </button>
+              </p>
+            </div>
           </div>
-
-          <p className="text-center text-text font-medium mb-3">
-            Who is setting up this companion?
-          </p>
-
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={() => select('guardian')}
-              className="w-full bg-surface border border-border rounded-xl p-5 text-left flex items-center gap-4 hover:border-primary hover:shadow-sm transition-all duration-200 group"
-            >
-              <div className="w-10 h-10 rounded-full bg-bg flex items-center justify-center group-hover:bg-primary transition-colors">
-                <Shield size={18} className="text-primary group-hover:text-white transition-colors" />
-              </div>
-              <div>
-                <p className="font-medium text-text text-sm">I am a Guardian</p>
-                <p className="text-muted text-xs mt-0.5">Setting this up for a family member</p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => select('elder')}
-              className="w-full bg-surface border border-border rounded-xl p-5 text-left flex items-center gap-4 hover:border-primary hover:shadow-sm transition-all duration-200 group"
-            >
-              <div className="w-10 h-10 rounded-full bg-bg flex items-center justify-center group-hover:bg-primary transition-colors">
-                <User size={18} className="text-primary group-hover:text-white transition-colors" />
-              </div>
-              <div>
-                <p className="font-medium text-text text-sm">I am an Older Adult</p>
-                <p className="text-muted text-xs mt-0.5">Setting this up for myself</p>
-              </div>
-            </button>
-          </div>
-
-          <p className="text-center text-muted text-xs mt-8">
-            Already have an account?{' '}
-            <button onClick={() => navigate('/auth')} className="text-primary font-medium hover:underline">
-              Sign in
-            </button>
-          </p>
         </div>
       </section>
 
       {/* Trust strip */}
-      <section className="px-4 py-8 bg-surface border-t border-border">
-        <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+      <section className="px-4 py-10 bg-primary">
+        <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-center gap-x-10 gap-y-5">
           {TRUST_SIGNALS.map(({ icon: Icon, text }) => (
-            <div key={text} className="flex items-center gap-2 text-muted text-xs font-medium">
-              <Icon size={15} className="text-primary" />
+            <div key={text} className="flex items-center gap-2.5 text-bg text-sm font-medium">
+              <Icon size={18} className="text-bg/70" />
               {text}
             </div>
           ))}
@@ -205,7 +210,7 @@ export default function Landing() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="px-4 py-20 bg-gradient-to-b from-surface to-bg border-t border-border">
+      <section id="pricing" className="px-4 py-20 bg-gradient-to-b from-surface to-bg">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-4">
             <span className="inline-flex items-center gap-1.5 bg-accent text-white text-xs font-semibold px-4 py-1.5 rounded-full shadow-sm">
@@ -336,6 +341,35 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="px-4 py-10 border-t border-border">
+        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-2">
+            <img src="/logo_3.png" alt="MaeMate" width={400} height={139} className="h-6 w-auto opacity-80" />
+            <span className="text-muted text-xs">&copy; {new Date().getFullYear()} MaeMate</span>
+          </div>
+
+          <div className="flex items-center gap-5 text-sm">
+            <a
+              href="mailto:hello.maemate@gmail.com"
+              className="flex items-center gap-1.5 text-muted hover:text-primary transition-colors"
+            >
+              <Mail size={15} />
+              hello.maemate@gmail.com
+            </a>
+            <a
+              href="https://wa.me/2348149660220"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-muted hover:text-primary transition-colors"
+            >
+              <MessageCircle size={15} />
+              WhatsApp
+            </a>
+          </div>
+        </div>
+      </footer>
     </main>
   )
 }
