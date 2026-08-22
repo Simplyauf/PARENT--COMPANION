@@ -4,9 +4,11 @@ const API_URL = (import.meta.env.VITE_API_URL as string) ?? 'http://localhost:30
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  code?: string
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -25,11 +27,13 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     let message = res.statusText
+    let code: string | undefined
     try {
       const body = await res.json()
       if (typeof body.error === 'string') message = body.error
+      if (typeof body.code === 'string') code = body.code
     } catch { /* not JSON */ }
-    throw new ApiError(res.status, message)
+    throw new ApiError(res.status, message, code)
   }
 
   return res.json() as Promise<T>
@@ -50,7 +54,6 @@ export type ApiParent = {
   role: 'primary' | 'co'
   notifyVia: 'imessage' | 'gmail'
   lastContact: string | null
-  hasSubscription: boolean
 }
 
 export type ApiFact = { id: string; parentId: string; label: string; value: string }
@@ -184,14 +187,15 @@ export type ApiBillingPlans = {
 export const getBillingPlans = () =>
   api<ApiBillingPlans>('/api/billing/plans')
 
-export const getPendingSubscription = () =>
-  api<{ ready: boolean; plan?: Plan; cycle?: Cycle }>('/api/subscriptions/pending')
+export type ApiSubscriptionStatus =
+  | { hasSubscription: false }
+  | { hasSubscription: true; plan: Plan; cycle: Cycle; status: string; capacity: number; atCapacity: boolean }
+
+export const getSubscriptionStatus = () =>
+  api<ApiSubscriptionStatus>('/api/subscriptions/status')
 
 export const getSubscription = (parentId: string) =>
   api<ApiSubscription>(`/api/subscriptions/${parentId}`)
 
-export const getCustomerPortal = (parentId: string) =>
-  api<{ url: string }>(`/api/subscriptions/${parentId}/portal`, { method: 'POST', body: '{}' })
-
-export const resubscribeParent = (parentId: string) =>
-  api<{ ok: true }>(`/api/parents/${parentId}/resubscribe`, { method: 'POST', body: '{}' })
+export const getCustomerPortal = () =>
+  api<{ url: string }>('/api/subscriptions/portal', { method: 'POST', body: '{}' })

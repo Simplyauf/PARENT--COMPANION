@@ -1,9 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { subscriptions, guardianParentLinks } from '../db/schema.js'
-import { eq, and, isNull, desc } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { getPortalUrl } from '../lib/paddle.js'
-import { PRICE_IDS } from '../lib/plans.js'
+import { PRICE_IDS, SEAT_LIMITS } from '../lib/plans.js'
 
 export const subscriptionRoutes: FastifyPluginAsync = async (fastify) => {
 
@@ -17,25 +17,38 @@ export const subscriptionRoutes: FastifyPluginAsync = async (fastify) => {
     }
   })
 
-  // GET /api/subscriptions/pending — does this guardian have a subscription
-  // from checkout that hasn't been linked to a parent yet? Polled by the Setup
-  // wizard while it waits for the Paddle webhook to land.
-  fastify.get('/api/subscriptions/pending', async (request, reply) => {
-    const pending = await db.query.subscriptions.findFirst({
-      where: and(
-        eq(subscriptions.guardianId, request.userId),
-        isNull(subscriptions.parentId)
-      ),
+  // GET /api/subscriptions/status — one subscription per guardian, covering
+  // up to SEAT_LIMITS[plan] parents. Setup uses this to decide whether to
+  // show the plan picker, skip straight to the parent form, or prompt an
+  // upgrade.
+  fastify.get('/api/subscriptions/status', async (request, reply) => {
+    const sub = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.guardianId, request.userId),
       orderBy: desc(subscriptions.createdAt),
     })
 
-    if (!pending || !['trialing', 'active'].includes(pending.status)) {
-      return { ready: false }
+    if (!sub || !['trialing', 'active', 'past_due'].includes(sub.status)) {
+      return { hasSubscription: false }
     }
-    return { ready: true, plan: pending.plan, cycle: pending.cycle }
+
+    const parentCount = await db.query.guardianParentLinks.findMany({
+      where: and(eq(guardianParentLinks.guardianId, request.userId), eq(guardianParentLinks.role, 'primary')),
+    })
+
+    const capacity = SEAT_LIMITS[sub.plan]
+    return {
+      hasSubscription: true,
+      plan: sub.plan,
+      cycle: sub.cycle,
+      status: sub.status,
+      capacity,
+      atCapacity: parentCount.length >= capacity,
+    }
   })
 
-  // GET /api/subscriptions/:parentId — billing info for the dashboard
+  // GET /api/subscriptions/:parentId — billing info for the dashboard.
+  // Resolved via the parent's PRIMARY guardian's subscription, not a
+  // per-parent one — one subscription can cover several parents.
   fastify.get('/api/subscriptions/:parentId', async (request, reply) => {
     const { parentId } = request.params as { parentId: string }
 
@@ -44,7 +57,15 @@ export const subscriptionRoutes: FastifyPluginAsync = async (fastify) => {
     })
     if (!link) return reply.status(403).send({ error: 'Access denied' })
 
-    const sub = await db.query.subscriptions.findFirst({ where: eq(subscriptions.parentId, parentId) })
+    const primaryLink = await db.query.guardianParentLinks.findFirst({
+      where: and(eq(guardianParentLinks.parentId, parentId), eq(guardianParentLinks.role, 'primary')),
+    })
+    if (!primaryLink) return reply.status(404).send({ error: 'No subscription found' })
+
+    const sub = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.guardianId, primaryLink.guardianId),
+      orderBy: desc(subscriptions.createdAt),
+    })
     if (!sub) return reply.status(404).send({ error: 'No subscription found' })
 
     return {
@@ -57,17 +78,13 @@ export const subscriptionRoutes: FastifyPluginAsync = async (fastify) => {
     }
   })
 
-  // POST /api/subscriptions/:parentId/portal — mint a fresh Paddle customer
-  // portal session (one-time-use, never cached).
-  fastify.post('/api/subscriptions/:parentId/portal', async (request, reply) => {
-    const { parentId } = request.params as { parentId: string }
-
-    const link = await db.query.guardianParentLinks.findFirst({
-      where: and(eq(guardianParentLinks.guardianId, request.userId), eq(guardianParentLinks.parentId, parentId)),
+  // POST /api/subscriptions/portal — mint a fresh Paddle customer portal
+  // session for the signed-in guardian's own subscription (one-time-use).
+  fastify.post('/api/subscriptions/portal', async (request, reply) => {
+    const sub = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.guardianId, request.userId),
+      orderBy: desc(subscriptions.createdAt),
     })
-    if (!link) return reply.status(403).send({ error: 'Access denied' })
-
-    const sub = await db.query.subscriptions.findFirst({ where: eq(subscriptions.parentId, parentId) })
     if (!sub?.paddleCustomerId || !sub.paddleSubscriptionId) return reply.status(404).send({ error: 'No subscription found' })
 
     const url = await getPortalUrl(sub.paddleCustomerId, [sub.paddleSubscriptionId])

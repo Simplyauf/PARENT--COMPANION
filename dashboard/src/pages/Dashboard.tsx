@@ -218,10 +218,10 @@ export default function Dashboard() {
   }
 
   const openBillingPortal = async () => {
-    if (!currentParent || portalLoading) return
+    if (portalLoading) return
     setPortalLoading(true)
     try {
-      const { url } = await getCustomerPortal(currentParent.id)
+      const { url } = await getCustomerPortal()
       window.open(url, '_blank')
     } catch (err) {
       setLoadError((err as Error).message)
@@ -814,9 +814,9 @@ export default function Dashboard() {
 
               {!subscription ? (
                 <>
-                  <p className="text-xs text-[#646D7A] mb-3">No subscription found for {currentParent.name}.</p>
+                  <p className="text-xs text-[#646D7A] mb-3">No active subscription on your account.</p>
                   <button
-                    onClick={() => navigate('/setup', { state: { role: 'guardian', parentId: currentParent.id } })}
+                    onClick={() => navigate('/setup', { state: { role: 'guardian' } })}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium bg-[#1B4D3E] text-white hover:bg-[#2D6A56] transition-colors"
                   >
                     <CreditCard size={14} />

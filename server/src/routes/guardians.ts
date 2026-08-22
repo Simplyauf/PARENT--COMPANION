@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { db } from '../db/index.js'
 import { guardianParentLinks, invites, users, subscriptions } from '../db/schema.js'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { Resend } from 'resend'
 import crypto from 'crypto'
 import { SEAT_LIMITS, type Plan } from '../lib/plans.js'
@@ -58,7 +58,17 @@ export const guardianRoutes: FastifyPluginAsync = async (fastify) => {
 
     await assertPrimaryAccess(request.userId, parentId, reply)
 
-    const sub = await db.query.subscriptions.findFirst({ where: eq(subscriptions.parentId, parentId) })
+    // Seat limit comes from the PRIMARY guardian's subscription — one
+    // subscription per guardian account, not per parent.
+    const primaryLink = await db.query.guardianParentLinks.findFirst({
+      where: and(eq(guardianParentLinks.parentId, parentId), eq(guardianParentLinks.role, 'primary')),
+    })
+    const sub = primaryLink
+      ? await db.query.subscriptions.findFirst({
+          where: eq(subscriptions.guardianId, primaryLink.guardianId),
+          orderBy: desc(subscriptions.createdAt),
+        })
+      : undefined
     const seatLimit = SEAT_LIMITS[(sub?.plan ?? 'basic') as Plan]
 
     const [currentGuardians, pendingInvites] = await Promise.all([

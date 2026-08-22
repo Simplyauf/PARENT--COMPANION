@@ -2,10 +2,11 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { db } from '../db/index.js'
 import { parents, guardianParentLinks, companionFacts, reminders, summarySchedules, users, activityLogs, subscriptions } from '../db/schema.js'
-import { eq, and, isNull, desc } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { registerPhone } from '../lib/claw.js'
 import { chat, COMPANION_NAME } from '../lib/llm.js'
 import { sendIMessageCheckin } from '../lib/notifications.js'
+import { SEAT_LIMITS } from '../lib/plans.js'
 
 const CreateParentBody = z.object({
   name: z.string().min(1),
@@ -36,7 +37,6 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
         parent: {
           with: {
             activityLogs: { limit: 1, orderBy: (t, { desc }) => [desc(t.createdAt)] },
-            subscription: true,
           },
         },
       },
@@ -47,7 +47,6 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
       role: l.role,
       notifyVia: l.notifyVia,
       lastContact: l.parent.activityLogs[0]?.createdAt ?? null,
-      hasSubscription: !!l.parent.subscription && ['trialing', 'active', 'past_due'].includes(l.parent.subscription.status),
     }))
   })
 
@@ -68,14 +67,24 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
       })
     }
 
-    // Every parent needs an active subscription — find the most recent one
-    // from checkout that hasn't been linked to a parent yet
-    const pendingSub = await db.query.subscriptions.findFirst({
-      where: and(eq(subscriptions.guardianId, request.userId), isNull(subscriptions.parentId)),
+    // One subscription per guardian, covering up to SEAT_LIMITS[plan] parents —
+    // not one subscription per parent.
+    const sub = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.guardianId, request.userId),
       orderBy: desc(subscriptions.createdAt),
     })
-    if (!pendingSub || !['trialing', 'active'].includes(pendingSub.status)) {
-      return reply.status(402).send({ error: 'Complete checkout before adding a companion.' })
+    if (!sub || !['trialing', 'active', 'past_due'].includes(sub.status)) {
+      return reply.status(402).send({ error: 'Complete checkout before adding a companion.', code: 'no_subscription' })
+    }
+
+    const existingParents = await db.query.guardianParentLinks.findMany({
+      where: and(eq(guardianParentLinks.guardianId, request.userId), eq(guardianParentLinks.role, 'primary')),
+    })
+    if (existingParents.length >= SEAT_LIMITS[sub.plan]) {
+      return reply.status(402).send({
+        error: `Your ${sub.plan} plan covers up to ${SEAT_LIMITS[sub.plan]} companion${SEAT_LIMITS[sub.plan] === 1 ? '' : 's'} — upgrade to add another.`,
+        code: 'capacity_reached',
+      })
     }
 
     if (guardianPhone) {
@@ -87,8 +96,6 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
       activeHoursFrom: activeHoursFrom as `${number}:${number}`,
       activeHoursTo: activeHoursTo as `${number}:${number}`,
     }).returning()
-
-    await db.update(subscriptions).set({ parentId: parent.id }).where(eq(subscriptions.id, pendingSub.id))
 
     await db.insert(guardianParentLinks).values({
       guardianId: request.userId,
@@ -211,28 +218,6 @@ Their guardian asked you to check in on them right now. ${isFirstContact
     })
 
     return { ok: true, message: text }
-  })
-
-  // POST /api/parents/:id/resubscribe — attach a freshly purchased subscription
-  // to an EXISTING parent whose subscription lapsed, instead of creating a
-  // duplicate parent. Used when checkout starts from an already-created
-  // parent's Billing card rather than fresh onboarding.
-  fastify.post('/api/parents/:id/resubscribe', async (request, reply) => {
-    const { id } = request.params as { id: string }
-
-    await assertAccess(request.userId, id, reply)
-
-    const pendingSub = await db.query.subscriptions.findFirst({
-      where: and(eq(subscriptions.guardianId, request.userId), isNull(subscriptions.parentId)),
-      orderBy: desc(subscriptions.createdAt),
-    })
-    if (!pendingSub || !['trialing', 'active'].includes(pendingSub.status)) {
-      return reply.status(402).send({ error: 'No new subscription found to attach — complete checkout first.' })
-    }
-
-    await db.update(subscriptions).set({ parentId: id }).where(eq(subscriptions.id, pendingSub.id))
-
-    return { ok: true }
   })
 
   // ─── Companion facts ─────────────────────────────────────────────────────

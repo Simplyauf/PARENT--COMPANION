@@ -2,12 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, X, MessageCircle, Mail, AlertCircle, Heart, Users, Check } from 'lucide-react'
 import { initializePaddle, CheckoutEventNames, type Paddle } from '@paddle/paddle-js'
-import { createParent, getBillingPlans, getPendingSubscription, getMyGuardianProfile, getParents, resubscribeParent, type ApiBillingPlans, type Plan, type Cycle } from '../lib/api'
+import { createParent, getBillingPlans, getSubscriptionStatus, getCustomerPortal, getMyGuardianProfile, getParents, ApiError, type ApiBillingPlans, type ApiSubscriptionStatus, type Plan, type Cycle } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
-const BILLING_PLANS: { id: Plan; name: string; icon: typeof Heart; monthly: number; yearly: number; blurb: string }[] = [
-  { id: 'basic', name: 'Basic', icon: Heart, monthly: 12, yearly: 120, blurb: 'One companion, one person' },
-  { id: 'family', name: 'Family', icon: Users, monthly: 22, yearly: 216, blurb: 'Up to 5 guardians, no daily limit' },
+const BILLING_PLANS: { id: Plan; name: string; icon: typeof Heart; monthly: number; yearly: number; blurb: string; capacity: number }[] = [
+  { id: 'basic', name: 'Basic', icon: Heart, monthly: 12, yearly: 120, blurb: 'One companion, one person', capacity: 1 },
+  { id: 'family', name: 'Family', icon: Users, monthly: 22, yearly: 216, blurb: 'Up to 5 companions or guardians', capacity: 5 },
 ]
 
 const TIMEZONES = [
@@ -20,25 +20,24 @@ const TIMEZONES = [
   { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
 ]
 
-type BillingGate = 'checking' | 'polling' | 'poll-timeout' | 'picking-plan' | 'starting-checkout' | 'ready' | 'resubscribing' | 'resubscribe-error'
+type BillingGate = 'checking' | 'polling' | 'poll-timeout' | 'picking-plan' | 'starting-checkout' | 'ready' | 'at-capacity'
 
 export default function Setup() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const navState = location.state as { role?: string; plan?: Plan; cycle?: Cycle; parentId?: string } | null
+  const navState = location.state as { role?: string; plan?: Plan; cycle?: Cycle } | null
   const role = navState?.role ?? 'guardian'
   const isGuardian = role === 'guardian'
-  // Seeded from "Choose a plan" when available, but that nav state doesn't
-  // survive a refresh — auto-detected as a fallback below from parents with
-  // no subscription, so this still works after a reload or a direct link
-  const [resubscribeParentId, setResubscribeParentId] = useState<string | undefined>(navState?.parentId)
 
-  // ─── Billing gate: every parent needs a subscription before the form shows ──
+  // ─── Billing gate: one subscription per guardian, covering up to a plan's
+  // capacity in parents — not one subscription per parent. ──────────────────
   const [billingGate, setBillingGate] = useState<BillingGate>('checking')
   const [pickedPlan, setPickedPlan] = useState<Plan>(navState?.plan ?? 'basic')
   const [pickedCycle, setPickedCycle] = useState<Cycle>(navState?.cycle ?? 'monthly')
   const [billingError, setBillingError] = useState<string | null>(null)
+  const [currentPlan, setCurrentPlan] = useState<Extract<ApiSubscriptionStatus, { hasSubscription: true }> | null>(null)
+  const [portalLoading, setPortalLoading] = useState(false)
   const pollTries = useRef(0)
 
   const paddleRef = useRef<Paddle | null>(null)
@@ -46,9 +45,13 @@ export default function Setup() {
 
   const checkSubscription = async () => {
     try {
-      const { ready } = await getPendingSubscription()
-      if (ready) { setBillingGate('ready'); return true }
-    } catch { /* treat as not-ready */ }
+      const status = await getSubscriptionStatus()
+      if (status.hasSubscription) {
+        setCurrentPlan(status)
+        setBillingGate(status.atCapacity ? 'at-capacity' : 'ready')
+        return true
+      }
+    } catch { /* treat as no subscription */ }
     return false
   }
 
@@ -76,18 +79,6 @@ export default function Setup() {
     getBillingPlans().then(plans => { billingPlansRef.current = plans }).catch(() => { /* surfaced at checkout time */ })
   }, [])
 
-  // Resubscribing an existing parent (e.g. "Choose a plan" after a lapsed
-  // subscription) — attach the new subscription to that parent and skip the
-  // "Parent's details" form entirely, it already exists, don't duplicate it
-  useEffect(() => {
-    if (billingGate !== 'ready' || !resubscribeParentId) return
-    setBillingGate('resubscribing')
-    resubscribeParent(resubscribeParentId)
-      .then(() => navigate('/dashboard'))
-      .catch(() => setBillingGate('resubscribe-error'))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [billingGate, resubscribeParentId])
-
   useEffect(() => {
     (async () => {
       if (await checkSubscription()) return
@@ -106,12 +97,22 @@ export default function Setup() {
         return () => clearInterval(interval)
       }
 
-      // No checkout in flight — show the plan picker (fresh onboarding fallback,
-      // or "add another parent" which always needs its own subscription)
+      // No subscription at all yet — fresh onboarding
       setBillingGate('picking-plan')
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const openUpgrade = async () => {
+    setPortalLoading(true)
+    try {
+      const { url } = await getCustomerPortal()
+      window.location.href = url
+    } catch {
+      setBillingError('Could not open billing — try again')
+      setPortalLoading(false)
+    }
+  }
 
   const startCheckout = async () => {
     setBillingError(null)
@@ -175,13 +176,6 @@ export default function Setup() {
         if (!parents.length) return
         setExistingParentNames(parents.map(p => p.name))
 
-        // Exactly one parent with no subscription — this new one is almost
-        // certainly meant to reattach for them, not create a duplicate
-        if (!resubscribeParentId) {
-          const orphaned = parents.filter(p => !p.hasSubscription)
-          if (orphaned.length === 1) setResubscribeParentId(orphaned[0].id)
-        }
-
         const latest = [...parents].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
         setTimezone(latest.timezone)
         setActiveFrom(latest.activeHoursFrom)
@@ -214,40 +208,57 @@ export default function Setup() {
       })
       navigate('/activate', { state: { parentId: parent.id, parentName: parent.name } })
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'capacity_reached') {
+        setBillingGate('at-capacity')
+        setSubmitting(false)
+        return
+      }
       setError((err as Error).message || 'Something went wrong — try again')
       setSubmitting(false)
     }
   }
 
   // ─── Billing gate screens — shown before the parent form ────────────────────
-  if (billingGate === 'checking' || billingGate === 'polling' || billingGate === 'resubscribing') {
+  if (billingGate === 'checking' || billingGate === 'polling') {
     return (
       <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center px-4">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-[#1B4D3E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-[#646D7A] text-sm">
-            {billingGate === 'polling' ? 'Confirming your subscription…'
-              : billingGate === 'resubscribing' ? 'Reactivating your companion…'
-              : 'Loading…'}
+            {billingGate === 'polling' ? 'Confirming your subscription…' : 'Loading…'}
           </p>
         </div>
       </div>
     )
   }
 
-  if (billingGate === 'resubscribe-error') {
+  if (billingGate === 'at-capacity') {
+    const capacity = currentPlan?.capacity ?? 1
+    const planName = currentPlan?.plan === 'family' ? 'Family' : 'Basic'
     return (
       <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center px-4">
         <div className="text-center max-w-sm">
-          <AlertCircle size={24} className="text-[#DC2626] mx-auto mb-3" />
-          <p className="text-[#1A1A1A] text-sm mb-1">Payment went through, but reactivating didn't</p>
-          <p className="text-[#646D7A] text-xs mb-4">Your card wasn't charged twice — try again, or contact support if this keeps happening.</p>
-          <button
-            onClick={() => setBillingGate('ready')}
-            className="text-[#1B4D3E] text-sm font-medium hover:underline"
-          >
-            Try again
-          </button>
+          <AlertCircle size={24} className="text-[#D97706] mx-auto mb-3" />
+          <p className="text-[#1A1A1A] text-sm mb-1">You've reached your plan's limit</p>
+          <p className="text-[#646D7A] text-xs mb-6">
+            Your {planName} plan covers up to {capacity} companion{capacity === 1 ? '' : 's'}. Upgrade to add another.
+          </p>
+          {billingError && <p className="text-xs text-[#DC2626] mb-4">{billingError}</p>}
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={openUpgrade}
+              disabled={portalLoading}
+              className="w-full bg-[#1B4D3E] text-white rounded-xl py-3 text-sm font-medium hover:bg-[#2D6A56] transition-colors disabled:opacity-60"
+            >
+              {portalLoading ? 'Opening…' : 'Upgrade plan'}
+            </button>
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="text-[#646D7A] text-sm font-medium hover:text-[#1A1A1A] transition-colors"
+            >
+              Back to dashboard
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -282,9 +293,9 @@ export default function Setup() {
           <div className="mb-6">
             <p className="text-[#1B4D3E] font-medium text-sm tracking-widest uppercase mb-2">Choose a plan</p>
             <h2 className="text-3xl text-[#1A1A1A]" style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}>
-              One more companion, one more plan
+              Start your subscription
             </h2>
-            <p className="text-[#646D7A] text-sm mt-2">Each parent gets their own subscription — 7-day free trial, cancel anytime.</p>
+            <p className="text-[#646D7A] text-sm mt-2">One plan covers your whole account — 7-day free trial, cancel anytime.</p>
           </div>
 
           <div className="flex justify-center mb-6">
