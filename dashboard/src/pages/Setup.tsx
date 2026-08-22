@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, X, MessageCircle, Mail, AlertCircle, Heart, Users, Check } from 'lucide-react'
 import { initializePaddle, CheckoutEventNames, type Paddle } from '@paddle/paddle-js'
-import { createParent, getBillingPlans, getPendingSubscription, type ApiBillingPlans, type Plan, type Cycle } from '../lib/api'
+import { createParent, getBillingPlans, getPendingSubscription, getMyGuardianProfile, type ApiBillingPlans, type Plan, type Cycle } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
 const BILLING_PLANS: { id: Plan; name: string; icon: typeof Heart; monthly: number; yearly: number; blurb: string }[] = [
@@ -140,6 +140,14 @@ export default function Setup() {
   const [reminders, setReminders] = useState<string[]>([''])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Prefill "your contact" with whatever this guardian already has on file —
+  // set the first time they added a parent, so it shouldn't be retyped for the next one
+  useEffect(() => {
+    getMyGuardianProfile()
+      .then(({ phone }) => { if (phone) setGuardianPhone(phone) })
+      .catch(() => { /* no saved phone yet — leave blank */ })
+  }, [])
 
   const addReminder = () => setReminders(r => [...r, ''])
   const removeReminder = (i: number) => setReminders(r => r.filter((_, idx) => idx !== i))

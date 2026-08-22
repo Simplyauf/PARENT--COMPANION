@@ -149,6 +149,8 @@ export const updateSchedule = (parentId: string, body: {
 
 export const getGuardians = (parentId: string) => api<ApiGuardian[]>(`/api/guardians/${parentId}`)
 
+export const getMyGuardianProfile = () => api<{ phone: string | null }>('/api/guardians/me')
+
 export const inviteGuardian = (parentId: string, email: string, notifyVia: 'imessage' | 'gmail') =>
   api<{ ok: true }>('/api/guardians/invite', { method: 'POST', body: JSON.stringify({ parentId, email, notifyVia }) })
 

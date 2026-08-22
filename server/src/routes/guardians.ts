@@ -21,6 +21,13 @@ const AcceptInviteBody = z.object({
 
 export const guardianRoutes: FastifyPluginAsync = async (fastify) => {
 
+  // GET /api/guardians/me — the signed-in guardian's own saved contact info,
+  // used to prefill setup when adding another parent
+  fastify.get('/api/guardians/me', async (request, reply) => {
+    const self = await db.query.users.findFirst({ where: eq(users.id, request.userId) })
+    return { phone: self?.phone ?? null }
+  })
+
   // GET /api/guardians/:parentId — list guardians for a parent
   fastify.get('/api/guardians/:parentId', async (request, reply) => {
     const { parentId } = request.params as { parentId: string }
