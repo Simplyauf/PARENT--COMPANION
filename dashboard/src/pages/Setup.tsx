@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, X, MessageCircle, Mail, AlertCircle, Heart, Users, Check } from 'lucide-react'
 import { initializePaddle, CheckoutEventNames, type Paddle } from '@paddle/paddle-js'
-import { createParent, getBillingPlans, getPendingSubscription, getMyGuardianProfile, type ApiBillingPlans, type Plan, type Cycle } from '../lib/api'
+import { createParent, getBillingPlans, getPendingSubscription, getMyGuardianProfile, getParents, type ApiBillingPlans, type Plan, type Cycle } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
 const BILLING_PLANS: { id: Plan; name: string; icon: typeof Heart; monthly: number; yearly: number; blurb: string }[] = [
@@ -147,6 +147,21 @@ export default function Setup() {
     getMyGuardianProfile()
       .then(({ phone }) => { if (phone) setGuardianPhone(phone) })
       .catch(() => { /* no saved phone yet — leave blank */ })
+  }, [])
+
+  // Prefill timezone + active hours from the guardian's most recently added
+  // parent — likely the same household/schedule, unlike name/phone which are
+  // always specific to whoever's being set up right now
+  useEffect(() => {
+    getParents()
+      .then(parents => {
+        if (!parents.length) return
+        const latest = [...parents].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+        setTimezone(latest.timezone)
+        setActiveFrom(latest.activeHoursFrom)
+        setActiveTo(latest.activeHoursTo)
+      })
+      .catch(() => { /* no prior parent — leave defaults */ })
   }, [])
 
   const addReminder = () => setReminders(r => [...r, ''])
