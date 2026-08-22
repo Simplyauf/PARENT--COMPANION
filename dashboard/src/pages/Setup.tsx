@@ -153,6 +153,7 @@ export default function Setup() {
   const [reminders, setReminders] = useState<string[]>([''])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [existingParentNames, setExistingParentNames] = useState<string[]>([])
 
   // Prefill "your contact" with whatever this guardian already has on file —
   // set the first time they added a parent, so it shouldn't be retyped for the next one
@@ -169,6 +170,7 @@ export default function Setup() {
     getParents()
       .then(parents => {
         if (!parents.length) return
+        setExistingParentNames(parents.map(p => p.name))
         const latest = [...parents].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
         setTimezone(latest.timezone)
         setActiveFrom(latest.activeHoursFrom)
@@ -361,6 +363,18 @@ export default function Setup() {
               : 'This is what guides every check-in and conversation with you.'}
           </p>
         </div>
+
+        {isGuardian && existingParentNames.length > 0 && (
+          <div className="flex items-start gap-2.5 bg-[#1B4D3E]/5 border border-[#1B4D3E]/15 rounded-xl px-4 py-3 mb-6 text-sm text-[#1A1A1A]">
+            <Users size={16} className="text-[#1B4D3E] flex-shrink-0 mt-0.5" />
+            <span>
+              You're adding <strong>another</strong> companion.{' '}
+              {existingParentNames.length === 1
+                ? <>{existingParentNames[0]} is already set up and won't be affected.</>
+                : <>{existingParentNames.join(', ')} are already set up and won't be affected.</>}
+            </span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
 
