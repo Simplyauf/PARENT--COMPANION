@@ -34,8 +34,14 @@ fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, bo
 
 // ─── Plugins ──────────────────────────────────────────────────────────────────
 
+const dashboardUrl = process.env.DASHBOARD_URL ?? 'http://localhost:5173'
+const dashboardOrigins = [dashboardUrl]
+if (dashboardUrl.startsWith('https://') && !dashboardUrl.includes('://www.')) {
+  dashboardOrigins.push(dashboardUrl.replace('https://', 'https://www.'))
+}
+
 await fastify.register(cors, {
-  origin: [process.env.DASHBOARD_URL ?? 'http://localhost:5173'],
+  origin: dashboardOrigins,
   credentials: true,
 })
 
