@@ -36,6 +36,7 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
         parent: {
           with: {
             activityLogs: { limit: 1, orderBy: (t, { desc }) => [desc(t.createdAt)] },
+            subscription: true,
           },
         },
       },
@@ -46,6 +47,7 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
       role: l.role,
       notifyVia: l.notifyVia,
       lastContact: l.parent.activityLogs[0]?.createdAt ?? null,
+      hasSubscription: !!l.parent.subscription && ['trialing', 'active', 'past_due'].includes(l.parent.subscription.status),
     }))
   })
 

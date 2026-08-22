@@ -29,7 +29,10 @@ export default function Setup() {
   const navState = location.state as { role?: string; plan?: Plan; cycle?: Cycle; parentId?: string } | null
   const role = navState?.role ?? 'guardian'
   const isGuardian = role === 'guardian'
-  const resubscribeParentId = navState?.parentId
+  // Seeded from "Choose a plan" when available, but that nav state doesn't
+  // survive a refresh — auto-detected as a fallback below from parents with
+  // no subscription, so this still works after a reload or a direct link
+  const [resubscribeParentId, setResubscribeParentId] = useState<string | undefined>(navState?.parentId)
 
   // ─── Billing gate: every parent needs a subscription before the form shows ──
   const [billingGate, setBillingGate] = useState<BillingGate>('checking')
@@ -171,6 +174,14 @@ export default function Setup() {
       .then(parents => {
         if (!parents.length) return
         setExistingParentNames(parents.map(p => p.name))
+
+        // Exactly one parent with no subscription — this new one is almost
+        // certainly meant to reattach for them, not create a duplicate
+        if (!resubscribeParentId) {
+          const orphaned = parents.filter(p => !p.hasSubscription)
+          if (orphaned.length === 1) setResubscribeParentId(orphaned[0].id)
+        }
+
         const latest = [...parents].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
         setTimezone(latest.timezone)
         setActiveFrom(latest.activeHoursFrom)

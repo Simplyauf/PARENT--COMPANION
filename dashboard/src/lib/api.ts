@@ -50,6 +50,7 @@ export type ApiParent = {
   role: 'primary' | 'co'
   notifyVia: 'imessage' | 'gmail'
   lastContact: string | null
+  hasSubscription: boolean
 }
 
 export type ApiFact = { id: string; parentId: string; label: string; value: string }
