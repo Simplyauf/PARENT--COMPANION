@@ -26,13 +26,14 @@ export default function Setup() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const role = (location.state as { role: string })?.role ?? 'guardian'
+  const navState = location.state as { role?: string; plan?: Plan; cycle?: Cycle } | null
+  const role = navState?.role ?? 'guardian'
   const isGuardian = role === 'guardian'
 
   // ─── Billing gate: every parent needs a subscription before the form shows ──
   const [billingGate, setBillingGate] = useState<BillingGate>('checking')
-  const [pickedPlan, setPickedPlan] = useState<Plan>('basic')
-  const [pickedCycle, setPickedCycle] = useState<Cycle>('monthly')
+  const [pickedPlan, setPickedPlan] = useState<Plan>(navState?.plan ?? 'basic')
+  const [pickedCycle, setPickedCycle] = useState<Cycle>(navState?.cycle ?? 'monthly')
   const [billingError, setBillingError] = useState<string | null>(null)
   const pollTries = useRef(0)
 

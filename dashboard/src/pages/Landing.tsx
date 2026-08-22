@@ -295,7 +295,11 @@ export default function Landing() {
                   </ul>
 
                   <button
-                    onClick={() => navigate('/auth')}
+                    onClick={() =>
+                      signedIn
+                        ? navigate('/setup', { state: { role: 'guardian', plan: plan.name.toLowerCase(), cycle } })
+                        : navigate('/auth')
+                    }
                     className={`w-full rounded-xl py-3.5 text-sm font-semibold transition-colors ${
                       plan.highlight
                         ? 'bg-primary text-white hover:bg-primary-light shadow-md'
