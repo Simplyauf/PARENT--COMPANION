@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, X, MessageCircle, Mail, AlertCircle, Heart, Users, Check } from 'lucide-react'
 import { initializePaddle, CheckoutEventNames, type Paddle } from '@paddle/paddle-js'
-import { createParent, getBillingPlans, getPendingSubscription, getMyGuardianProfile, getParents, type ApiBillingPlans, type Plan, type Cycle } from '../lib/api'
+import { createParent, getBillingPlans, getPendingSubscription, getMyGuardianProfile, getParents, resubscribeParent, type ApiBillingPlans, type Plan, type Cycle } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
 const BILLING_PLANS: { id: Plan; name: string; icon: typeof Heart; monthly: number; yearly: number; blurb: string }[] = [
@@ -20,15 +20,16 @@ const TIMEZONES = [
   { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
 ]
 
-type BillingGate = 'checking' | 'polling' | 'poll-timeout' | 'picking-plan' | 'starting-checkout' | 'ready'
+type BillingGate = 'checking' | 'polling' | 'poll-timeout' | 'picking-plan' | 'starting-checkout' | 'ready' | 'resubscribing' | 'resubscribe-error'
 
 export default function Setup() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const navState = location.state as { role?: string; plan?: Plan; cycle?: Cycle } | null
+  const navState = location.state as { role?: string; plan?: Plan; cycle?: Cycle; parentId?: string } | null
   const role = navState?.role ?? 'guardian'
   const isGuardian = role === 'guardian'
+  const resubscribeParentId = navState?.parentId
 
   // ─── Billing gate: every parent needs a subscription before the form shows ──
   const [billingGate, setBillingGate] = useState<BillingGate>('checking')
@@ -71,6 +72,18 @@ export default function Setup() {
     }
     getBillingPlans().then(plans => { billingPlansRef.current = plans }).catch(() => { /* surfaced at checkout time */ })
   }, [])
+
+  // Resubscribing an existing parent (e.g. "Choose a plan" after a lapsed
+  // subscription) — attach the new subscription to that parent and skip the
+  // "Parent's details" form entirely, it already exists, don't duplicate it
+  useEffect(() => {
+    if (billingGate !== 'ready' || !resubscribeParentId) return
+    setBillingGate('resubscribing')
+    resubscribeParent(resubscribeParentId)
+      .then(() => navigate('/dashboard'))
+      .catch(() => setBillingGate('resubscribe-error'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billingGate, resubscribeParentId])
 
   useEffect(() => {
     (async () => {
@@ -194,14 +207,34 @@ export default function Setup() {
   }
 
   // ─── Billing gate screens — shown before the parent form ────────────────────
-  if (billingGate === 'checking' || billingGate === 'polling') {
+  if (billingGate === 'checking' || billingGate === 'polling' || billingGate === 'resubscribing') {
     return (
       <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center px-4">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-[#1B4D3E] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-[#646D7A] text-sm">
-            {billingGate === 'polling' ? 'Confirming your subscription…' : 'Loading…'}
+            {billingGate === 'polling' ? 'Confirming your subscription…'
+              : billingGate === 'resubscribing' ? 'Reactivating your companion…'
+              : 'Loading…'}
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (billingGate === 'resubscribe-error') {
+    return (
+      <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center px-4">
+        <div className="text-center max-w-sm">
+          <AlertCircle size={24} className="text-[#DC2626] mx-auto mb-3" />
+          <p className="text-[#1A1A1A] text-sm mb-1">Payment went through, but reactivating didn't</p>
+          <p className="text-[#646D7A] text-xs mb-4">Your card wasn't charged twice — try again, or contact support if this keeps happening.</p>
+          <button
+            onClick={() => setBillingGate('ready')}
+            className="text-[#1B4D3E] text-sm font-medium hover:underline"
+          >
+            Try again
+          </button>
         </div>
       </div>
     )

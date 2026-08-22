@@ -191,3 +191,6 @@ export const getSubscription = (parentId: string) =>
 
 export const getCustomerPortal = (parentId: string) =>
   api<{ url: string }>(`/api/subscriptions/${parentId}/portal`, { method: 'POST', body: '{}' })
+
+export const resubscribeParent = (parentId: string) =>
+  api<{ ok: true }>(`/api/parents/${parentId}/resubscribe`, { method: 'POST', body: '{}' })

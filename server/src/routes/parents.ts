@@ -211,6 +211,28 @@ Their guardian asked you to check in on them right now. ${isFirstContact
     return { ok: true, message: text }
   })
 
+  // POST /api/parents/:id/resubscribe — attach a freshly purchased subscription
+  // to an EXISTING parent whose subscription lapsed, instead of creating a
+  // duplicate parent. Used when checkout starts from an already-created
+  // parent's Billing card rather than fresh onboarding.
+  fastify.post('/api/parents/:id/resubscribe', async (request, reply) => {
+    const { id } = request.params as { id: string }
+
+    await assertAccess(request.userId, id, reply)
+
+    const pendingSub = await db.query.subscriptions.findFirst({
+      where: and(eq(subscriptions.guardianId, request.userId), isNull(subscriptions.parentId)),
+      orderBy: desc(subscriptions.createdAt),
+    })
+    if (!pendingSub || !['trialing', 'active'].includes(pendingSub.status)) {
+      return reply.status(402).send({ error: 'No new subscription found to attach — complete checkout first.' })
+    }
+
+    await db.update(subscriptions).set({ parentId: id }).where(eq(subscriptions.id, pendingSub.id))
+
+    return { ok: true }
+  })
+
   // ─── Companion facts ─────────────────────────────────────────────────────
 
   fastify.post('/api/parents/:id/facts', async (request, reply) => {
