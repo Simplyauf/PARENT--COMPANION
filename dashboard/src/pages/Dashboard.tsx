@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Phone, Settings, Clock, Plus, X, AlertCircle,
   ChevronRight, MessageCircle, PhoneCall, LayoutGrid,
-  Activity, Save, ChevronDown, Mail, Check, UserPlus, Crown, User, CreditCard, ExternalLink,
+  Activity, Save, ChevronDown, Mail, Check, UserPlus, Crown, User, CreditCard, ExternalLink, LogOut,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -68,6 +68,8 @@ export default function Dashboard() {
   const [currentParentId, setCurrentParentId] = useState<string | null>(null)
   const [parentDropdownOpen, setParentDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const accountMenuRef = useRef<HTMLDivElement>(null)
 
   const [facts, setFacts] = useState<ApiFact[]>([])
   const [newLabel, setNewLabel] = useState('')
@@ -187,6 +189,9 @@ export default function Dashboard() {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setParentDropdownOpen(false)
+      }
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setAccountMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', handler)
@@ -380,24 +385,51 @@ export default function Dashboard() {
         <div className="max-w-lg lg:max-w-2xl mx-auto">
 
           {/* Row 1: logo + tabs (tabs hidden on mobile) */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <img src="/logo_3.png" alt="MaeMate" width={400} height={139} className="h-8 w-auto rounded" />
 
+            <div className="flex items-center gap-2">
+              {/* Desktop tabs — hidden below sm */}
+              <div className="hidden sm:flex items-center gap-1 bg-[#F7F5F0] rounded-xl p-1">
+                {tabs.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => setTab(id)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B4D3E]/50 ${
+                      tab === id ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#646D7A] hover:text-[#1A1A1A]'
+                    }`}
+                  >
+                    <Icon size={13} />
+                    {label}
+                  </button>
+                ))}
+              </div>
 
-            {/* Desktop tabs — hidden below sm */}
-            <div className="hidden sm:flex items-center gap-1 bg-[#F7F5F0] rounded-xl p-1">
-              {tabs.map(({ id, label, icon: Icon }) => (
+              {/* Account menu */}
+              <div className="relative" ref={accountMenuRef}>
                 <button
-                  key={id}
-                  onClick={() => setTab(id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B4D3E]/50 ${
-                    tab === id ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#646D7A] hover:text-[#1A1A1A]'
-                  }`}
+                  onClick={() => setAccountMenuOpen(o => !o)}
+                  className="w-8 h-8 rounded-full bg-[#1B4D3E]/10 flex items-center justify-center hover:bg-[#1B4D3E]/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B4D3E]/50"
+                  aria-label="Account menu"
                 >
-                  <Icon size={13} />
-                  {label}
+                  <User size={14} className="text-[#1B4D3E]" />
                 </button>
-              ))}
+
+                {accountMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-xl shadow-lg border border-[#E5E1D8] py-1.5 z-20">
+                    <button
+                      onClick={async () => {
+                        await supabase.auth.signOut()
+                        navigate('/')
+                      }}
+                      className="w-full flex items-center gap-2 px-3.5 py-2.5 text-sm text-[#1A1A1A] hover:bg-[#F7F5F0] transition-colors"
+                    >
+                      <LogOut size={14} className="text-[#646D7A]" />
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -781,7 +813,16 @@ export default function Dashboard() {
               </div>
 
               {!subscription ? (
-                <p className="text-xs text-[#646D7A]">No subscription found for {currentParent.name}.</p>
+                <>
+                  <p className="text-xs text-[#646D7A] mb-3">No subscription found for {currentParent.name}.</p>
+                  <button
+                    onClick={() => navigate('/setup', { state: { role: 'guardian' } })}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium bg-[#1B4D3E] text-white hover:bg-[#2D6A56] transition-colors"
+                  >
+                    <CreditCard size={14} />
+                    Choose a plan
+                  </button>
+                </>
               ) : (
                 <>
                   <div className="flex items-center justify-between bg-[#F7F5F0] rounded-xl px-4 py-3 mb-3">
