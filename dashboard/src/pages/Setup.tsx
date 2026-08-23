@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, X, MessageCircle, Mail, AlertCircle, Heart, Users, Check } from 'lucide-react'
 import { initializePaddle, CheckoutEventNames, type Paddle } from '@paddle/paddle-js'
-import { createParent, getBillingPlans, getSubscriptionStatus, getCustomerPortal, getMyGuardianProfile, getParents, ApiError, type ApiBillingPlans, type ApiSubscriptionStatus, type Plan, type Cycle } from '../lib/api'
+import { createParent, getBillingPlans, getSubscriptionStatus, getCustomerPortal, changePlan, getMyGuardianProfile, getParents, ApiError, type ApiBillingPlans, type ApiSubscriptionStatus, type Plan, type Cycle } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
 const BILLING_PLANS: { id: Plan; name: string; icon: typeof Heart; monthly: number; yearly: number; blurb: string; capacity: number }[] = [
@@ -111,6 +111,21 @@ export default function Setup() {
     } catch {
       setBillingError('Could not open billing — try again')
       setPortalLoading(false)
+    }
+  }
+
+  const [changingPlan, setChangingPlan] = useState<Plan | null>(null)
+
+  const handleChangePlan = async (plan: Plan, cycle: Cycle) => {
+    setBillingError(null)
+    setChangingPlan(plan)
+    try {
+      await changePlan(plan, cycle)
+      await checkSubscription() // re-syncs billingGate — 'ready' if this opened up room
+    } catch (err) {
+      setBillingError((err as Error).message || 'Could not change plan — try again')
+    } finally {
+      setChangingPlan(null)
     }
   }
 
@@ -234,31 +249,86 @@ export default function Setup() {
 
   if (billingGate === 'at-capacity') {
     const capacity = currentPlan?.capacity ?? 1
-    const planName = currentPlan?.plan === 'family' ? 'Family' : 'Basic'
     return (
-      <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center px-4">
-        <div className="text-center max-w-sm">
-          <AlertCircle size={24} className="text-[#D97706] mx-auto mb-3" />
-          <p className="text-[#1A1A1A] text-sm mb-1">You've reached your plan's limit</p>
-          <p className="text-[#646D7A] text-xs mb-6">
-            Your {planName} plan covers up to {capacity} companion{capacity === 1 ? '' : 's'}. Upgrade to add another.
-          </p>
-          {billingError && <p className="text-xs text-[#DC2626] mb-4">{billingError}</p>}
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={openUpgrade}
-              disabled={portalLoading}
-              className="w-full bg-[#1B4D3E] text-white rounded-xl py-3 text-sm font-medium hover:bg-[#2D6A56] transition-colors disabled:opacity-60"
-            >
-              {portalLoading ? 'Opening…' : 'Upgrade plan'}
-            </button>
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="text-[#646D7A] text-sm font-medium hover:text-[#1A1A1A] transition-colors"
-            >
-              Back to dashboard
-            </button>
+      <div className="min-h-screen bg-[#F7F5F0] px-4 py-10">
+        <div className="w-full max-w-md mx-auto">
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-1.5 text-[#646D7A] text-sm mb-8 hover:text-[#1A1A1A] transition-colors">
+            <ArrowLeft size={16} /> Back to dashboard
+          </button>
+
+          <div className="mb-6">
+            <p className="text-[#D97706] font-medium text-sm tracking-widest uppercase mb-2">Plan limit reached</p>
+            <h2 className="text-3xl text-[#1A1A1A]" style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}>
+              Upgrade to add another
+            </h2>
+            <p className="text-[#646D7A] text-sm mt-2">
+              Your current plan covers up to {capacity} companion{capacity === 1 ? '' : 's'}.
+            </p>
           </div>
+
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex bg-white border border-[#E5E1D8] rounded-full p-1">
+              {(['monthly', 'yearly'] as const).map(c => (
+                <button
+                  key={c}
+                  onClick={() => setPickedCycle(c)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors capitalize ${pickedCycle === c ? 'bg-[#1B4D3E] text-white' : 'text-[#646D7A]'}`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 mb-4">
+            {BILLING_PLANS.map(p => {
+              const cycle = currentPlan?.plan === p.id ? currentPlan.cycle : pickedCycle
+              const price = cycle === 'monthly' ? p.monthly : p.yearly
+              const isActive = currentPlan?.plan === p.id
+              const isUpgrade = p.capacity > capacity
+              const isDowngrade = p.capacity < capacity
+              return (
+                <div
+                  key={p.id}
+                  className={`w-full bg-white border rounded-2xl p-5 flex items-center gap-4 ${isActive ? 'border-[#1B4D3E] ring-1 ring-[#1B4D3E]' : 'border-[#E5E1D8]'}`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isActive ? 'bg-[#1B4D3E]' : 'bg-[#F7F5F0]'}`}>
+                    <p.icon size={18} className={isActive ? 'text-white' : 'text-[#1B4D3E]'} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-[#1A1A1A] text-sm">{p.name}</p>
+                    <p className="text-xs text-[#646D7A]">{p.blurb}</p>
+                    <p className="text-xs text-[#1A1A1A] font-medium mt-0.5">
+                      ${price}<span className="font-normal text-[#646D7A]">/{cycle === 'monthly' ? 'mo' : 'yr'}</span>
+                    </p>
+                  </div>
+                  {isActive ? (
+                    <span className="text-xs font-semibold text-[#1B4D3E] bg-[#1B4D3E]/10 px-3 py-1.5 rounded-full flex-shrink-0">
+                      Active
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleChangePlan(p.id, pickedCycle)}
+                      disabled={changingPlan !== null}
+                      className="text-xs font-semibold text-white bg-[#1B4D3E] hover:bg-[#2D6A56] px-3.5 py-2 rounded-full flex-shrink-0 transition-colors disabled:opacity-60"
+                    >
+                      {changingPlan === p.id ? '…' : isUpgrade ? 'Upgrade' : isDowngrade ? 'Downgrade' : 'Switch'}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {billingError && <p className="text-xs text-[#DC2626] mb-4">{billingError}</p>}
+
+          <button
+            onClick={openUpgrade}
+            disabled={portalLoading}
+            className="text-[#646D7A] text-xs hover:text-[#1A1A1A] transition-colors disabled:opacity-60"
+          >
+            {portalLoading ? 'Opening…' : 'Manage billing, payment method, or cancel'}
+          </button>
         </div>
       </div>
     )

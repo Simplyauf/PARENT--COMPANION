@@ -199,3 +199,6 @@ export const getSubscription = (parentId: string) =>
 
 export const getCustomerPortal = () =>
   api<{ url: string }>('/api/subscriptions/portal', { method: 'POST', body: '{}' })
+
+export const changePlan = (plan: Plan, cycle: Cycle) =>
+  api<{ ok: true }>('/api/subscriptions/change-plan', { method: 'POST', body: JSON.stringify({ plan, cycle }) })

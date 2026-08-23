@@ -1,9 +1,15 @@
 import type { FastifyPluginAsync } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index.js'
 import { subscriptions, guardianParentLinks } from '../db/schema.js'
 import { eq, and, desc } from 'drizzle-orm'
-import { getPortalUrl } from '../lib/paddle.js'
-import { PRICE_IDS, SEAT_LIMITS } from '../lib/plans.js'
+import { getPaddleInstance, getPortalUrl } from '../lib/paddle.js'
+import { PRICE_IDS, SEAT_LIMITS, type Plan, type Cycle } from '../lib/plans.js'
+
+const ChangePlanBody = z.object({
+  plan: z.enum(['basic', 'family']),
+  cycle: z.enum(['monthly', 'yearly']),
+})
 
 export const subscriptionRoutes: FastifyPluginAsync = async (fastify) => {
 
@@ -89,5 +95,36 @@ export const subscriptionRoutes: FastifyPluginAsync = async (fastify) => {
 
     const url = await getPortalUrl(sub.paddleCustomerId, [sub.paddleSubscriptionId])
     return { url }
+  })
+
+  // POST /api/subscriptions/change-plan — upgrade or downgrade in place.
+  // Upgrades bill the prorated difference now; downgrades apply at the next
+  // renewal instead of issuing a mid-period refund.
+  fastify.post('/api/subscriptions/change-plan', async (request, reply) => {
+    const parse = ChangePlanBody.safeParse(request.body)
+    if (!parse.success) return reply.status(400).send({ error: parse.error.flatten() })
+    const { plan, cycle } = parse.data
+
+    const sub = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.guardianId, request.userId),
+      orderBy: desc(subscriptions.createdAt),
+    })
+    if (!sub?.paddleSubscriptionId) return reply.status(404).send({ error: 'No subscription found' })
+
+    const newPriceId = PRICE_IDS[plan as Plan][cycle as Cycle]
+    if (!newPriceId) return reply.status(400).send({ error: 'That plan is not available right now' })
+
+    const isUpgrade = SEAT_LIMITS[plan as Plan] > SEAT_LIMITS[sub.plan]
+
+    await getPaddleInstance().subscriptions.update(sub.paddleSubscriptionId, {
+      items: [{ priceId: newPriceId, quantity: 1 }],
+      prorationBillingMode: isUpgrade ? 'prorated_immediately' : 'prorated_next_billing_period',
+    })
+
+    // Optimistic — the subscription.updated webhook will also sync this,
+    // but the UI shouldn't have to wait for it to reflect the new plan.
+    await db.update(subscriptions).set({ plan, cycle, updatedAt: new Date() }).where(eq(subscriptions.id, sub.id))
+
+    return { ok: true }
   })
 }

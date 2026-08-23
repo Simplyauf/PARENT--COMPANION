@@ -17,7 +17,7 @@ import { eq } from 'drizzle-orm'
 import { analyzeTranscript } from '../lib/llm.js'
 import { dispatchAlert } from '../lib/notifications.js'
 import { getPaddleInstance } from '../lib/paddle.js'
-import type { Plan, Cycle } from '../lib/plans.js'
+import { planFromPriceId, type Plan, type Cycle } from '../lib/plans.js'
 
 const ClawMessageBody = z.object({
   parentId: z.string().uuid(),
@@ -135,10 +135,20 @@ async function upsertSubscription(event: SubscriptionEvent) {
   })
 
   if (existing) {
+    // Plan/cycle can change outside our own change-plan endpoint too (the
+    // Paddle customer portal supports upgrades/downgrades directly) — resync
+    // from whatever price is actually on the subscription now.
+    const priceId = sub.items?.[0]?.price?.id
+    const resolved = priceId ? planFromPriceId(priceId) : undefined
+
     await db.update(subscriptions)
-      .set({ status, trialEndsAt, renewsAt, endsAt, updatedAt: new Date() })
+      .set({
+        status, trialEndsAt, renewsAt, endsAt,
+        ...(resolved ? { plan: resolved.plan, cycle: resolved.cycle } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(subscriptions.paddleSubscriptionId, sub.id))
-    console.log(`[billing] ${event.eventType} → ${sub.id} now ${status}`)
+    console.log(`[billing] ${event.eventType} → ${sub.id} now ${status}${resolved ? ` (${resolved.plan}/${resolved.cycle})` : ''}`)
     return
   }
 

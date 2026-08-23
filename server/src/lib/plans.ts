@@ -18,3 +18,12 @@ export const PRICE_IDS: Record<Plan, Record<Cycle, string | undefined>> = {
     yearly: process.env.PADDLE_PRICE_FAMILY_YEARLY,
   },
 }
+
+export function planFromPriceId(priceId: string): { plan: Plan; cycle: Cycle } | undefined {
+  for (const plan of Object.keys(PRICE_IDS) as Plan[]) {
+    for (const cycle of Object.keys(PRICE_IDS[plan]) as Cycle[]) {
+      if (PRICE_IDS[plan][cycle] === priceId) return { plan, cycle }
+    }
+  }
+  return undefined
+}
