@@ -126,6 +126,14 @@ export type PaymentIssuePayload = {
   guardianEmail: string
   guardianPhone: string | null
   portalUrl: string
+  parentNames: string[]
+}
+
+function namesList(names: string[]) {
+  if (names.length === 0) return 'your companion'
+  if (names.length === 1) return `${names[0]}'s companion`
+  if (names.length === 2) return `${names[0]} and ${names[1]}'s companions`
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}'s companions`
 }
 
 // Billing notices never go through the parent's thread — they're addressed
@@ -145,7 +153,7 @@ export async function sendPaymentIssueEmail(payload: PaymentIssuePayload) {
           A payment didn't go through
         </p>
         <p style="color: #1A1A1A; font-size: 15px; line-height: 1.6; margin: 0 0 20px;">
-          The card on file for your MaeMate subscription was declined. Update it to keep Mae checking in without interruption.
+          The card on file for your MaeMate subscription was declined. Update it to keep ${namesList(payload.parentNames)} checking in without interruption.
         </p>
         <a href="${payload.portalUrl}" style="display: inline-block; background: #1B4D3E; color: white; text-decoration: none; padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 600;">
           Update payment method
@@ -156,7 +164,7 @@ export async function sendPaymentIssueEmail(payload: PaymentIssuePayload) {
 }
 
 export async function dispatchPaymentIssue(payload: PaymentIssuePayload) {
-  const msg = `Hi, this is the MaeMate team (not Mae) — the card on file for your subscription didn't go through. Update it here so Mae can keep checking in without interruption: ${payload.portalUrl}`
+  const msg = `Hi, this is the MaeMate team (not Mae) — the card on file for your subscription didn't go through. Update it here so ${namesList(payload.parentNames)} can keep checking in without interruption: ${payload.portalUrl}`
 
   if (payload.guardianPhone) {
     await sendIMessageAlert(payload.guardianPhone, msg)

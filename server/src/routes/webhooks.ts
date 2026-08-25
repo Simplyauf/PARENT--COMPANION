@@ -13,9 +13,9 @@ import {
 } from '@paddle/paddle-node-sdk'
 import { db } from '../db/index.js'
 import { activityLogs, guardianParentLinks, subscriptions, users } from '../db/schema.js'
-import { eq } from 'drizzle-orm'
-import { analyzeTranscript } from '../lib/llm.js'
-import { dispatchAlert, dispatchPaymentIssue } from '../lib/notifications.js'
+import { eq, and } from 'drizzle-orm'
+import { analyzeTranscript, chat, COMPANION_NAME } from '../lib/llm.js'
+import { dispatchAlert, dispatchPaymentIssue, sendIMessageCheckin } from '../lib/notifications.js'
 import { getPaddleInstance, getPortalUrl } from '../lib/paddle.js'
 import { planFromPriceId, type Plan, type Cycle } from '../lib/plans.js'
 
@@ -157,8 +157,18 @@ async function upsertSubscription(event: SubscriptionEvent) {
       const guardian = await db.query.users.findFirst({ where: eq(users.id, existing.guardianId) })
       if (guardian && existing.paddleCustomerId) {
         const portalUrl = await getPortalUrl(existing.paddleCustomerId, [sub.id])
-        await dispatchPaymentIssue({ guardianEmail: guardian.email, guardianPhone: guardian.phone, portalUrl })
+        const parentNames = (await getGuardianParents(existing.guardianId)).map(p => p.name)
+        await dispatchPaymentIssue({ guardianEmail: guardian.email, guardianPhone: guardian.phone, portalUrl, parentNames })
       }
+    }
+
+    // Fully lapsed (not just past_due) — Mae has to actually stop, so each
+    // parent gets one gentle sign-off in her own voice, never mentioning
+    // money or billing. Only on the transition in, not every ping after.
+    const wasLapsed = existing.status === 'cancelled' || existing.status === 'expired'
+    const nowLapsed = status === 'cancelled' || status === 'expired'
+    if (!wasLapsed && nowLapsed) {
+      await notifyParentsOfLapse(existing.guardianId)
     }
     return
   }
@@ -186,6 +196,47 @@ async function upsertSubscription(event: SubscriptionEvent) {
     endsAt,
   })
   console.log(`[billing] subscription created for guardian ${guardianId}: ${plan}/${cycle}`)
+}
+
+async function getGuardianParents(guardianId: string) {
+  const links = await db.query.guardianParentLinks.findMany({
+    where: and(eq(guardianParentLinks.guardianId, guardianId), eq(guardianParentLinks.role, 'primary')),
+    with: { parent: true },
+  })
+  return links.map(l => l.parent)
+}
+
+// Subscription fully lapsed — Mae has to stop, but the parent should never
+// hear anything about money, billing, or "nobody's paying for me anymore."
+// One warm, in-character sign-off per parent, generated once and sent once.
+async function notifyParentsOfLapse(guardianId: string) {
+  const affected = await getGuardianParents(guardianId)
+
+  await Promise.allSettled(affected.map(async parent => {
+    const situation = parent.selfSetup
+      ? `You have to pause checking in on them for now — they set you up themselves, with no one else involved.`
+      : `You have to pause checking in on them for now.`
+
+    const msg = await chat([
+      {
+        role: 'user',
+        content: `You are ${COMPANION_NAME}, a warm friend who has been texting ${parent.name}, an elderly person you check in on. ${situation} Write a short, gentle goodbye-for-now message — you're not sure when you'll be back, but you've enjoyed getting to know them. Do NOT mention money, payment, billing, or subscriptions under any circumstances. ${parent.selfSetup ? "It's fine to gently mention they could reach out again if they'd like you back." : "It's fine to gently mention their family could get back in touch if they'd like you checking in again — they already know family set this up."} 1–2 sentences, warm, like a real friend, never robotic. Reply with ONLY the text message, nothing else.`,
+      },
+    ], { temperature: 0.8 })
+
+    const text = msg.content?.trim()
+    if (!text) return
+
+    await sendIMessageCheckin(parent.phone, text)
+    await db.insert(activityLogs).values({
+      parentId: parent.id,
+      type: 'message',
+      direction: 'outbound',
+      summary: `Subscription lapsed — sent sign-off: "${text.slice(0, 120)}"`,
+      sentiment: 'neutral',
+      rawTranscript: text,
+    })
+  }))
 }
 
 async function notifyGuardians(parentId: string, summary: string, isEmergency: boolean) {
