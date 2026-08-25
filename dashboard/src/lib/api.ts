@@ -123,8 +123,11 @@ export const updateParent = (id: string, body: Partial<{
   pauseDays: number // > 0 pauses Mae's check-ins for that many days; 0 resumes
 }>) => api<{ ok: true }>(`/api/parents/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
 
-export const requestCheckin = (parentId: string) =>
-  api<{ ok: true; message: string }>(`/api/parents/${parentId}/checkin`, { method: 'POST', body: '{}' })
+export const requestCheckin = (parentId: string, text?: string) =>
+  api<{ ok: true; message: string }>(`/api/parents/${parentId}/checkin`, { method: 'POST', body: JSON.stringify({ text }) })
+
+export const previewCheckin = (parentId: string) =>
+  api<{ text: string }>(`/api/parents/${parentId}/checkin/preview`, { method: 'POST', body: '{}' })
 
 export const addFact = (parentId: string, label: string, value: string) =>
   api<ApiFact>(`/api/parents/${parentId}/facts`, { method: 'POST', body: JSON.stringify({ label, value }) })

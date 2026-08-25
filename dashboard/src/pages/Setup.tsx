@@ -188,7 +188,13 @@ export default function Setup() {
   useEffect(() => {
     getParents()
       .then(parents => {
-        if (!parents.length) return
+        if (!parents.length) {
+          // First-ever parent — nothing to borrow from, so guess from the
+          // guardian's own browser instead of leaving it blank for them to pick
+          const detected = Intl.DateTimeFormat().resolvedOptions().timeZone
+          if (TIMEZONES.some(tz => tz.value === detected)) setTimezone(detected)
+          return
+        }
         setExistingParentNames(parents.map(p => p.name))
 
         const latest = [...parents].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]

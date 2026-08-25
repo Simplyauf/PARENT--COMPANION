@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { MessageCircle, ArrowLeft, Check, AlertCircle } from 'lucide-react'
-import { requestCheckin } from '../lib/api'
+import { requestCheckin, previewCheckin } from '../lib/api'
 
 const AGENT_PHONE = (import.meta.env.VITE_AGENT_PHONE as string) ?? '+14153238173'
 
@@ -21,12 +21,26 @@ export default function Activate() {
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [error, setError] = useState('')
 
+  // Draft the first message up front so the guardian can see exactly what
+  // their parent will receive before anything actually sends
+  const [previewText, setPreviewText] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  useEffect(() => {
+    if (!parentId) return
+    setPreviewLoading(true)
+    previewCheckin(parentId)
+      .then(({ text }) => setPreviewText(text))
+      .catch(() => { /* fall back to generating fresh at send time */ })
+      .finally(() => setPreviewLoading(false))
+  }, [parentId])
+
   const handleActivate = async () => {
     if (!parentId || status === 'sending' || status === 'sent') return
     setStatus('sending')
     setError('')
     try {
-      await requestCheckin(parentId)
+      await requestCheckin(parentId, previewText ?? undefined)
       setStatus('sent')
     } catch (err) {
       setError((err as Error).message || 'Could not send — try again')
@@ -77,6 +91,28 @@ export default function Activate() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Message preview — see exactly what your parent will receive */}
+        <div className="mb-6">
+          <p className="text-xs font-medium text-[#646D7A] uppercase tracking-widest mb-2">
+            What {firstName ?? 'they'}'ll see
+          </p>
+          {previewLoading && !previewText ? (
+            <div className="bg-[#EDEAE2] rounded-2xl rounded-bl-sm px-4 py-3 w-fit animate-pulse">
+              <div className="flex gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#646D7A]/50" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#646D7A]/50" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#646D7A]/50" />
+              </div>
+            </div>
+          ) : (
+            <div className="bg-[#EDEAE2] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[85%]">
+              <p className="text-sm text-[#1A1A1A] leading-relaxed">
+                {previewText ?? `Hi ${firstName ?? 'there'}! ${firstName ? "Your family" : "Someone in your family"} asked me to check in — just wanted to say hello and see how you're doing.`}
+              </p>
+            </div>
+          )}
         </div>
 
         {status === 'error' && (

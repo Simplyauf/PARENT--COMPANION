@@ -174,18 +174,9 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.status(200).send({ ok: true })
   })
 
-  // POST /api/parents/:id/checkin — send an immediate check-in text right now
-  fastify.post('/api/parents/:id/checkin', async (request, reply) => {
-    const { id } = request.params as { id: string }
-
-    await assertAccess(request.userId, id, reply)
-
-    const parent = await db.query.parents.findFirst({
-      where: eq(parents.id, id),
-      with: { companionFacts: true },
-    })
-    if (!parent) return reply.status(404).send({ error: 'Not found' })
-
+  // Shared with the preview endpoint below so the guardian sees the exact
+  // text before it sends, not a regenerated (and possibly different) one
+  async function generateCheckinText(parent: { id: string; name: string; companionFacts: { label: string; value: string }[] }) {
     const factsText = parent.companionFacts.map(f => `${f.label}: ${f.value}`).join(', ') || 'nothing yet'
 
     const priorContact = await db.query.activityLogs.findFirst({ where: eq(activityLogs.parentId, parent.id) })
@@ -203,7 +194,44 @@ Their guardian asked you to check in on them right now. ${isFirstContact
       },
     ], { temperature: 0.8 })
 
-    const text = msg.content?.trim()
+    return msg.content?.trim()
+  }
+
+  // POST /api/parents/:id/checkin/preview — draft the first message so the
+  // guardian can see exactly what their parent will receive before it sends
+  fastify.post('/api/parents/:id/checkin/preview', async (request, reply) => {
+    const { id } = request.params as { id: string }
+
+    await assertAccess(request.userId, id, reply)
+
+    const parent = await db.query.parents.findFirst({
+      where: eq(parents.id, id),
+      with: { companionFacts: true },
+    })
+    if (!parent) return reply.status(404).send({ error: 'Not found' })
+
+    const text = await generateCheckinText(parent)
+    if (!text) return reply.status(502).send({ error: 'Could not generate message' })
+
+    return { text }
+  })
+
+  // POST /api/parents/:id/checkin — send an immediate check-in text right now.
+  // Pass `text` (from the preview above) to send that exact draft instead of
+  // generating a fresh one.
+  fastify.post('/api/parents/:id/checkin', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { text: draftedText } = (request.body as { text?: string } | undefined) ?? {}
+
+    await assertAccess(request.userId, id, reply)
+
+    const parent = await db.query.parents.findFirst({
+      where: eq(parents.id, id),
+      with: { companionFacts: true },
+    })
+    if (!parent) return reply.status(404).send({ error: 'Not found' })
+
+    const text = draftedText?.trim() || await generateCheckinText(parent)
     if (!text) return reply.status(502).send({ error: 'Could not generate message' })
 
     await sendIMessageCheckin(parent.phone, text)
