@@ -1,0 +1,1 @@
+ALTER TABLE "parents" ADD COLUMN "self_setup" boolean DEFAULT false NOT NULL;

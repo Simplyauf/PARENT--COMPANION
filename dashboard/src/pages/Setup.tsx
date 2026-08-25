@@ -225,6 +225,7 @@ export default function Setup() {
         activeHoursTo: activeTo,
         notifyVia,
         guardianPhone: guardianPhone.trim().replace(/[\s()-]/g, '') || undefined,
+        selfSetup: !isGuardian,
         reminders: reminders.map(r => r.trim()).filter(Boolean),
       })
       navigate('/activate', { state: { parentId: parent.id, parentName: parent.name } })

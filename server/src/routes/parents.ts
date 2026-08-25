@@ -16,6 +16,7 @@ const CreateParentBody = z.object({
   activeHoursTo: z.string().default('20:00'),
   notifyVia: z.enum(['imessage', 'gmail']).default('imessage'),
   guardianPhone: z.string().optional(),
+  selfSetup: z.boolean().default(false),
   reminders: z.array(z.string()).optional(),
   facts: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
 })
@@ -55,7 +56,7 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
     const parse = CreateParentBody.safeParse(request.body)
     if (!parse.success) return reply.status(400).send({ error: parse.error.flatten() })
 
-    const { name, phone, timezone, activeHoursFrom, activeHoursTo, notifyVia, guardianPhone, reminders: reminderTexts, facts } = parse.data
+    const { name, phone, timezone, activeHoursFrom, activeHoursTo, notifyVia, guardianPhone, selfSetup, reminders: reminderTexts, facts } = parse.data
 
     // A guardian can't also be the elder — Mae texts the elder directly, so
     // they need their own number, distinct from the guardian's
@@ -92,7 +93,7 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const [parent] = await db.insert(parents).values({
-      name, phone, timezone,
+      name, phone, timezone, selfSetup,
       activeHoursFrom: activeHoursFrom as `${number}:${number}`,
       activeHoursTo: activeHoursTo as `${number}:${number}`,
     }).returning()
@@ -176,19 +177,25 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
 
   // Shared with the preview endpoint below so the guardian sees the exact
   // text before it sends, not a regenerated (and possibly different) one
-  async function generateCheckinText(parent: { id: string; name: string; companionFacts: { label: string; value: string }[] }) {
+  async function generateCheckinText(parent: { id: string; name: string; selfSetup: boolean; companionFacts: { label: string; value: string }[] }) {
     const factsText = parent.companionFacts.map(f => `${f.label}: ${f.value}`).join(', ') || 'nothing yet'
 
     const priorContact = await db.query.activityLogs.findFirst({ where: eq(activityLogs.parentId, parent.id) })
     const isFirstContact = !priorContact
+
+    const situation = parent.selfSetup
+      ? `${parent.name} signed themselves up for you directly — no family member set this up for them.`
+      : `Their guardian asked you to check in on them right now.`
 
     const msg = await chat([
       {
         role: 'user',
         content: `You are ${COMPANION_NAME}, a warm friend who texts ${parent.name}, an elderly person you check in on. What you know about them: ${factsText}.
 
-Their guardian asked you to check in on them right now. ${isFirstContact
-          ? `This is the very FIRST message you've ever sent them — briefly introduce yourself by name and mention their family asked you to check in and that you'll share how they're doing with them, warmly, like a friend being introduced, then move into a light easy question.`
+${situation} ${isFirstContact
+          ? parent.selfSetup
+            ? `This is the very FIRST message you've ever sent them — briefly introduce yourself by name and what you're here for (a daily friendly check-in), warmly, like a new friend introducing themselves, then move into a light easy question. Do NOT mention family or a guardian asking you to reach out — nobody set this up but them.`
+            : `This is the very FIRST message you've ever sent them — briefly introduce yourself by name and mention their family asked you to check in and that you'll share how they're doing with them, warmly, like a friend being introduced, then move into a light easy question.`
           : `Write a warm, casual check-in text.`
         } 1–2 sentences, like a real friend texting, never robotic. Reply with ONLY the text message, nothing else.`,
       },

@@ -31,6 +31,10 @@ export const parents = pgTable('parents', {
   activeHoursFrom: time('active_hours_from').notNull().default('09:00'),
   activeHoursTo: time('active_hours_to').notNull().default('20:00'),
   isActive: boolean('is_active').notNull().default(true),
+  // Did the elder set this up for themselves, or did a guardian set it up for
+  // them? Changes how Mae frames her first message — "your family asked me
+  // to check in" only makes sense in the guardian case.
+  selfSetup: boolean('self_setup').notNull().default(false),
   // Guardian-initiated pause: Mae (COMPANION_NAME) stops initiating (still replies) until this passes
   pausedUntil: timestamp('paused_until'),
   pausedAt: timestamp('paused_at'),

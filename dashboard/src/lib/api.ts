@@ -111,6 +111,7 @@ export const createParent = (body: {
   activeHoursTo: string
   notifyVia: 'imessage' | 'gmail'
   guardianPhone?: string
+  selfSetup?: boolean
   reminders?: string[]
 }) => api<ApiParentDetail>('/api/parents', { method: 'POST', body: JSON.stringify(body) })
 
