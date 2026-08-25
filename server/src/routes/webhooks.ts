@@ -12,11 +12,11 @@ import {
   type SubscriptionActivatedEvent,
 } from '@paddle/paddle-node-sdk'
 import { db } from '../db/index.js'
-import { activityLogs, guardianParentLinks, subscriptions } from '../db/schema.js'
+import { activityLogs, guardianParentLinks, subscriptions, users } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
 import { analyzeTranscript } from '../lib/llm.js'
-import { dispatchAlert } from '../lib/notifications.js'
-import { getPaddleInstance } from '../lib/paddle.js'
+import { dispatchAlert, dispatchPaymentIssue } from '../lib/notifications.js'
+import { getPaddleInstance, getPortalUrl } from '../lib/paddle.js'
 import { planFromPriceId, type Plan, type Cycle } from '../lib/plans.js'
 
 const ClawMessageBody = z.object({
@@ -149,6 +149,17 @@ async function upsertSubscription(event: SubscriptionEvent) {
       })
       .where(eq(subscriptions.paddleSubscriptionId, sub.id))
     console.log(`[billing] ${event.eventType} → ${sub.id} now ${status}${resolved ? ` (${resolved.plan}/${resolved.cycle})` : ''}`)
+
+    // Only fire on the transition INTO past_due, not every webhook ping
+    // while it stays there — and only to the guardian, never through Mae's
+    // thread with the parent.
+    if (existing.status !== 'past_due' && status === 'past_due') {
+      const guardian = await db.query.users.findFirst({ where: eq(users.id, existing.guardianId) })
+      if (guardian && existing.paddleCustomerId) {
+        const portalUrl = await getPortalUrl(existing.paddleCustomerId, [sub.id])
+        await dispatchPaymentIssue({ guardianEmail: guardian.email, guardianPhone: guardian.phone, portalUrl })
+      }
+    }
     return
   }
 

@@ -122,6 +122,49 @@ export async function sendSummaryEmail(payload: SummaryPayload) {
   })
 }
 
+export type PaymentIssuePayload = {
+  guardianEmail: string
+  guardianPhone: string | null
+  portalUrl: string
+}
+
+// Billing notices never go through the parent's thread — they're addressed
+// only to the guardian, and signed as "the MaeMate team" rather than "Mae"
+// so the one channel that's supposed to feel human never turns into a
+// billing bot, even in the guardian's own conversation.
+export async function sendPaymentIssueEmail(payload: PaymentIssuePayload) {
+  const resend = getResend()
+  if (!resend) return
+  await resend.emails.send({
+    from: process.env.EMAIL_FROM ?? 'MaeMate <billing@maemate.app>',
+    to: payload.guardianEmail,
+    subject: 'Your MaeMate subscription needs attention',
+    html: `
+      <div style="font-family: 'DM Sans', system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px; background: #F7F5F0;">
+        <p style="font-family: Georgia, serif; font-size: 22px; color: #1B4D3E; margin: 0 0 16px;">
+          A payment didn't go through
+        </p>
+        <p style="color: #1A1A1A; font-size: 15px; line-height: 1.6; margin: 0 0 20px;">
+          The card on file for your MaeMate subscription was declined. Update it to keep Mae checking in without interruption.
+        </p>
+        <a href="${payload.portalUrl}" style="display: inline-block; background: #1B4D3E; color: white; text-decoration: none; padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 600;">
+          Update payment method
+        </a>
+      </div>
+    `,
+  })
+}
+
+export async function dispatchPaymentIssue(payload: PaymentIssuePayload) {
+  const msg = `Hi, this is the MaeMate team (not Mae) — the card on file for your subscription didn't go through. Update it here so Mae can keep checking in without interruption: ${payload.portalUrl}`
+
+  if (payload.guardianPhone) {
+    await sendIMessageAlert(payload.guardianPhone, msg)
+  } else {
+    await sendPaymentIssueEmail(payload)
+  }
+}
+
 // ─── iMessage via Claw Messenger WebSocket ────────────────────────────────────
 
 import { sendMessage as clawSend } from './claw.js'
