@@ -1,13 +1,18 @@
 import WebSocket from 'ws'
 import { db } from '../db/index.js'
 import { parents, activityLogs, guardianParentLinks } from '../db/schema.js'
-import { eq } from 'drizzle-orm'
+import { eq, and, gte } from 'drizzle-orm'
 import { analyzeTranscript, COMPANION_NAME } from './llm.js'
 import { dispatchAlert } from './notifications.js'
 import { runAgentTurn } from './agent.js'
 import { transcribeVoiceNote } from './voice.js'
 
 const GUEST_MESSAGE_CAP = 8
+// The per-number cap already stops one number farming unlimited free
+// messages (guestMessageCount never resets). This is the other half —
+// a ceiling on total NEW guests per day, so a viral spike or bot traffic
+// against the public "Try Free" number has a known worst-case cost.
+const DAILY_GUEST_SIGNUP_CAP = 50
 
 const WS_URL = `wss://claw-messenger.onrender.com/ws?key=${process.env.CLAW_API_KEY}`
 const PING_INTERVAL_MS = 25_000
@@ -99,6 +104,16 @@ async function handleMessage(msg: Record<string, unknown>) {
     // No guardian, no subscription, full agent experience up to the cap below.
     let parent = await db.query.parents.findFirst({ where: eq(parents.phone, from) })
     if (!parent) {
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const guestsToday = await db.$count(parents, and(eq(parents.isGuest, true), gte(parents.createdAt, todayStart)))
+      if (guestsToday >= DAILY_GUEST_SIGNUP_CAP) {
+        console.log(`[claw] daily guest cap (${DAILY_GUEST_SIGNUP_CAP}) reached — declining new guest from ${from}`)
+        await sendMessage(from, "Hey! We're at capacity for free previews right now — head to maemate.com to subscribe directly, or try again tomorrow 💛")
+          .catch(err => console.error('[claw] guest-cap decline send failed:', err.message))
+        return
+      }
+
       const [created] = await db.insert(parents).values({
         name: 'Guest',
         phone: from,
@@ -106,7 +121,7 @@ async function handleMessage(msg: Record<string, unknown>) {
         selfSetup: true,
       }).returning()
       parent = created
-      console.log(`[claw] auto-provisioned guest from unregistered number ${from}`)
+      console.log(`[claw] auto-provisioned guest from unregistered number ${from} (${guestsToday + 1}/${DAILY_GUEST_SIGNUP_CAP} today)`)
     }
 
     // Guest already used their free preview — cheap static reply, skip

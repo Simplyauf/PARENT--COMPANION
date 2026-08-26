@@ -15,6 +15,27 @@ const RETRY_AFTER_H = 72                          // days of silence before one 
 const PAUSE_REMINDER_AFTER_MS = 4 * 24 * 60 * 60 * 1000
 const RECENT_ACTIVITY_COOLDOWN_MS = 20 * 60 * 1000 // never initiate within 20 min of any activity
 const MIN_RESEND_GAP_MS = { weekly: 6 * 24 * 60 * 60 * 1000, monthly: 25 * 24 * 60 * 60 * 1000 }
+const HEARTBEAT_CONCURRENCY = 20 // cap concurrent per-parent processing so a
+                                  // large parent count can't fan out into
+                                  // hundreds of simultaneous LLM calls / DB
+                                  // connections in the same tick
+
+// Bounded-concurrency worker pool — same resilience as Promise.allSettled
+// (one failure never stops the rest) but never more than `limit` in flight
+async function runBounded<T>(items: T[], limit: number, fn: (item: T) => Promise<unknown>) {
+  let next = 0
+  async function worker() {
+    while (next < items.length) {
+      const item = items[next++]
+      try {
+        await fn(item)
+      } catch (err) {
+        console.error('[heartbeat] item failed:', (err as Error).message)
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+}
 
 async function tick() {
   console.log(`[heartbeat] tick at ${new Date().toISOString()}`)
@@ -30,16 +51,14 @@ async function tick() {
     with: { companionFacts: true, reminders: true, subscription: true },
   })
 
-  await Promise.allSettled(
-    allParents
-      .filter(p => !followedUp.has(p.id)) // just messaged them — don't double-text
-      .map(processParent)
+  await runBounded(
+    allParents.filter(p => !followedUp.has(p.id)), // just messaged them — don't double-text
+    HEARTBEAT_CONCURRENCY,
+    processParent
   )
 
   // Memory maintenance: compact facts that have drifted out of the prompt window
-  for (const p of allParents) {
-    compactFacts(p.id).catch(err => console.error('[memory] compaction failed:', (err as Error).message))
-  }
+  await runBounded(allParents, HEARTBEAT_CONCURRENCY, p => compactFacts(p.id))
 }
 
 // ─── Execute due follow-ups the agent scheduled for itself ───────────────────
