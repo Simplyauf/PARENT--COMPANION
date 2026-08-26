@@ -220,7 +220,7 @@ async function notifyParentsOfLapse(guardianId: string) {
     const msg = await chat([
       {
         role: 'user',
-        content: `You are ${COMPANION_NAME}, a warm friend who has been texting ${parent.name}, an elderly person you check in on. ${situation} Write a short, gentle goodbye-for-now message — you're not sure when you'll be back, but you've enjoyed getting to know them. Do NOT mention money, payment, billing, or subscriptions under any circumstances. ${parent.selfSetup ? "It's fine to gently mention they could reach out again if they'd like you back." : "It's fine to gently mention their family could get back in touch if they'd like you checking in again — they already know family set this up."} 1–2 sentences, warm, like a real friend, never robotic. Reply with ONLY the text message, nothing else.`,
+        content: `You are ${COMPANION_NAME}, a warm friend who has been texting ${parent.name}, an elderly person you check in on. ${situation} Write a short, gentle goodbye-for-now message — you're not sure when you'll be back, but you've enjoyed getting to know them. Do NOT mention money, payment, billing, or the word "subscription" under any circumstances. ${parent.selfSetup ? "It's fine to gently mention they could reach out again if they'd like you back." : "Give them one concrete, actionable thing to do: gently ask them to let their family know, so family can sort things out on their end and get you checking in again — phrase it as something THEY can do (tell family), not something they need to log into or manage themselves, they don't have an account."} 1–2 sentences, warm, like a real friend, never robotic. Reply with ONLY the text message, nothing else.`,
       },
     ], { temperature: 0.8 })
 
