@@ -95,6 +95,7 @@ export const summarySchedules = pgTable('summary_schedules', {
   // monthly: 1-28, or null for "last day"
   dayOfMonth: integer('day_of_month'),
   sendAt: time('send_at').notNull().default('18:00'),
+  lastSentAt: timestamp('last_sent_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

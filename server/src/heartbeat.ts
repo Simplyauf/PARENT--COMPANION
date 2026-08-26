@@ -1,8 +1,8 @@
 import { db } from './db/index.js'
-import { activityLogs, parents, companionFacts, reminders, scheduledActions, guardianParentLinks, subscriptions } from './db/schema.js'
+import { activityLogs, parents, companionFacts, reminders, scheduledActions, guardianParentLinks, subscriptions, summarySchedules } from './db/schema.js'
 import { eq, and, gte, lte, lt, isNull, desc, type InferSelectModel } from 'drizzle-orm'
-import { decideHeartbeat, chat, COMPANION_NAME } from './lib/llm.js'
-import { sendIMessageCheckin, dispatchAlert } from './lib/notifications.js'
+import { decideHeartbeat, chat, COMPANION_NAME, generateWeeklySummary } from './lib/llm.js'
+import { sendIMessageCheckin, dispatchAlert, sendSummaryEmail } from './lib/notifications.js'
 import { compactFacts } from './lib/agent.js'
 import { DAILY_CONTACT_CAP, type Plan } from './lib/plans.js'
 
@@ -14,6 +14,7 @@ const GUARDIAN_ALERT_AFTER_H = 12                 // hours of silence after 3rd 
 const RETRY_AFTER_H = 72                          // days of silence before one gentle re-attempt
 const PAUSE_REMINDER_AFTER_MS = 4 * 24 * 60 * 60 * 1000
 const RECENT_ACTIVITY_COOLDOWN_MS = 20 * 60 * 1000 // never initiate within 20 min of any activity
+const MIN_RESEND_GAP_MS = { weekly: 6 * 24 * 60 * 60 * 1000, monthly: 25 * 24 * 60 * 60 * 1000 }
 
 async function tick() {
   console.log(`[heartbeat] tick at ${new Date().toISOString()}`)
@@ -21,6 +22,8 @@ async function tick() {
   // Agent-scheduled follow-ups come first — these are commitments the agent
   // made during conversation ("I'll ask how the appointment went")
   const followedUp = await runDueFollowups()
+
+  await runDueSummaries()
 
   const allParents = await db.query.parents.findMany({
     where: eq(parents.isActive, true),
@@ -114,6 +117,93 @@ Write ONE follow-up text now covering ${actions.length > 1 ? 'these (they overla
   }
 
   return messaged
+}
+
+// dayOfWeek in the schema is 0=Mon…6=Sun — compute that plus day-of-month
+// and HH:MM in the PARENT's own timezone, not server time
+function getLocalDateParts(date: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'short',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? ''
+  const WEEKDAY_MAP: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 }
+
+  const year = Number(get('year'))
+  const month = Number(get('month')) // 1-12
+  const day = Number(get('day'))
+  const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+
+  return {
+    dayOfWeek: WEEKDAY_MAP[get('weekday')] ?? 0,
+    dayOfMonth: day,
+    isLastDayOfMonth: day === lastDayOfMonth,
+    timeStr: `${get('hour')}:${get('minute')}`,
+  }
+}
+
+// Weekly/monthly wellbeing summaries to guardians — schedule stored per
+// parent, checked every tick and sent at most once per period
+async function runDueSummaries() {
+  const now = new Date()
+  const schedules = await db.query.summarySchedules.findMany({
+    with: { parent: { with: { guardianLinks: { with: { guardian: true } } } } },
+  })
+
+  for (const sched of schedules) {
+    const parent = sched.parent
+    if (!parent?.isActive) continue
+
+    const local = getLocalDateParts(now, parent.timezone)
+    const dueToday = sched.frequency === 'weekly'
+      ? sched.dayOfWeek === local.dayOfWeek
+      : sched.dayOfMonth != null ? sched.dayOfMonth === local.dayOfMonth : local.isLastDayOfMonth
+    if (!dueToday || local.timeStr < sched.sendAt) continue
+
+    const minGap = MIN_RESEND_GAP_MS[sched.frequency]
+    if (sched.lastSentAt && now.getTime() - sched.lastSentAt.getTime() < minGap) continue
+
+    const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const logs = await db.query.activityLogs.findMany({
+      where: and(eq(activityLogs.parentId, parent.id), gte(activityLogs.createdAt, since)),
+      orderBy: desc(activityLogs.createdAt),
+    })
+    if (!logs.length) continue // nothing to summarize yet
+
+    try {
+      const summary = await generateWeeklySummary(parent.name, logs)
+      const weekOf = new Intl.DateTimeFormat('en-US', { timeZone: parent.timezone, month: 'short', day: 'numeric' }).format(since)
+
+      await Promise.allSettled(
+        parent.guardianLinks.map(link =>
+          sendSummaryEmail({
+            guardianEmail: link.guardian.email,
+            guardianPhone: link.guardian.phone ?? undefined,
+            notifyVia: link.notifyVia,
+            parentName: parent.name,
+            weekOf,
+            overallMood: summary.overallMood,
+            moodSentence: summary.moodSentence,
+            notableMoments: summary.notableMoments,
+            companionNote: summary.companionNote,
+            stats: summary.stats,
+          })
+        )
+      )
+
+      await db.update(summarySchedules).set({ lastSentAt: now }).where(eq(summarySchedules.id, sched.id))
+      console.log(`[heartbeat] sent ${sched.frequency} summary for ${parent.name} to ${parent.guardianLinks.length} guardian(s)`)
+    } catch (err) {
+      console.error(`[heartbeat] summary failed for ${parent.name}:`, (err as Error).message)
+    }
+  }
 }
 
 type ParentWithContext = InferSelectModel<typeof parents> & {

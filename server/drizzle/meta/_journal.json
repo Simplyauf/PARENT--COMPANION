@@ -50,6 +50,13 @@
       "when": 1787729470437,
       "tag": "0006_yielding_fabian_cortez",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787732829965,
+      "tag": "0007_bitter_silver_fox",
+      "breakpoints": true
     }
   ]
 }

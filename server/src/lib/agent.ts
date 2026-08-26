@@ -216,9 +216,14 @@ async function sanitizeReply(parentId: string, text: string): Promise<string> {
     cleaned = cleaned.replace(full, '')
   }
 
-  // Drop any remaining tool-ish debris the regex pass may have left behind
+  // Drop any remaining tool-ish debris the regex pass may have left behind,
+  // and any malformed/mixed-in [REACT:...] or [NO_REPLY] control tokens —
+  // the exact-match checks in runAgentTurn only catch a clean, isolated
+  // token; this is the safety net for anything that leaks alongside real
+  // text or doesn't match the allowed emotion list exactly
   cleaned = cleaned
     .replace(/<\/?[a-z_]+=?[^>]*>/gi, '')
+    .replace(/\[(?:REACT[^\]]*|NO_REPLY)\]/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
