@@ -92,11 +92,22 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
       await db.update(users).set({ phone: guardianPhone }).where(eq(users.id, request.userId))
     }
 
-    const [parent] = await db.insert(parents).values({
-      name, phone, timezone, selfSetup,
+    // If they already texted Mae as a guest with this same number, convert
+    // that record in place instead of creating a duplicate — keeps the
+    // conversation history the guardian's about to see for the first time
+    const existingGuest = await db.query.parents.findFirst({
+      where: and(eq(parents.phone, phone), eq(parents.isGuest, true)),
+    })
+
+    const parentValues = {
+      name, timezone, selfSetup,
       activeHoursFrom: activeHoursFrom as `${number}:${number}`,
       activeHoursTo: activeHoursTo as `${number}:${number}`,
-    }).returning()
+    }
+
+    const [parent] = existingGuest
+      ? await db.update(parents).set({ ...parentValues, isGuest: false }).where(eq(parents.id, existingGuest.id)).returning()
+      : await db.insert(parents).values({ ...parentValues, phone }).returning()
 
     await db.insert(guardianParentLinks).values({
       guardianId: request.userId,

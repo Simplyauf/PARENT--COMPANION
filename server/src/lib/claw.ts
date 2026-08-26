@@ -7,6 +7,8 @@ import { dispatchAlert } from './notifications.js'
 import { runAgentTurn } from './agent.js'
 import { transcribeVoiceNote } from './voice.js'
 
+const GUEST_MESSAGE_CAP = 8
+
 const WS_URL = `wss://claw-messenger.onrender.com/ws?key=${process.env.CLAW_API_KEY}`
 const PING_INTERVAL_MS = 25_000
 const RECONNECT_MAX_MS = 30_000
@@ -92,10 +94,26 @@ async function handleMessage(msg: Record<string, unknown>) {
     const attachments = (msg.attachments as { url: string; mimeType: string }[] | undefined) ?? []
     if (!from) return
 
-    // Look up parent by phone number
-    const parent = await db.query.parents.findFirst({ where: eq(parents.phone, from) })
+    // Look up parent by phone number — auto-provision a guest if this is an
+    // unregistered number texting Mae directly (the public "Try Free" line).
+    // No guardian, no subscription, full agent experience up to the cap below.
+    let parent = await db.query.parents.findFirst({ where: eq(parents.phone, from) })
     if (!parent) {
-      console.log(`[claw] inbound from unregistered number ${from} — ignoring`)
+      const [created] = await db.insert(parents).values({
+        name: 'Guest',
+        phone: from,
+        isGuest: true,
+        selfSetup: true,
+      }).returning()
+      parent = created
+      console.log(`[claw] auto-provisioned guest from unregistered number ${from}`)
+    }
+
+    // Guest already used their free preview — cheap static reply, skip
+    // analysis and the agent entirely so a spammed number can't run up cost
+    if (parent.isGuest && parent.guestMessageCount >= GUEST_MESSAGE_CAP) {
+      await sendMessage(parent.phone, "Hey! You've reached the end of your free preview with me — if you'd like real daily check-ins (for yourself or someone you care about), head to maemate.com to keep this going 💛")
+        .catch(err => console.error('[claw] guest cap reminder send failed:', err.message))
       return
     }
 
@@ -159,11 +177,21 @@ async function handleMessage(msg: Record<string, unknown>) {
       )
     }
 
+    // Guests still get the same full agent experience up to the cap — only
+    // the message count is limited, not the quality of any given reply
+    let guestCapReached = false
+    if (parent.isGuest) {
+      const newCount = parent.guestMessageCount + 1
+      guestCapReached = newCount === GUEST_MESSAGE_CAP
+      await db.update(parents).set({ guestMessageCount: newCount }).where(eq(parents.id, parent.id))
+    }
+
     // Agentic reply — the companion talks back, remembers, and schedules follow-ups
     try {
       const reply = await runAgentTurn(parent, text, inboundLog.id, inboundMessageId, {
         emergency: analysis.emergency === true,
         scam: analysis.scam === true,
+        guestCapReached,
       })
       if (reply) console.log(`[agent] replied to ${parent.name}: "${reply.slice(0, 80)}"`)
     } catch (err) {

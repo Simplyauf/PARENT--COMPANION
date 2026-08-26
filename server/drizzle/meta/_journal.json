@@ -43,6 +43,13 @@
       "when": 1787693674551,
       "tag": "0005_wonderful_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787729470437,
+      "tag": "0006_yielding_fabian_cortez",
+      "breakpoints": true
     }
   ]
 }

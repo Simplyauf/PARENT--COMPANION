@@ -35,6 +35,13 @@ export const parents = pgTable('parents', {
   // them? Changes how Mae frames her first message — "your family asked me
   // to check in" only makes sense in the guardian case.
   selfSetup: boolean('self_setup').notNull().default(false),
+  // Auto-provisioned from an unregistered number texting Mae directly (the
+  // public "Try Free" line), not a real customer — no guardian, no
+  // subscription, capped at GUEST_MESSAGE_CAP messages before Mae nudges
+  // them to subscribe. Converted in place (isGuest flips to false) if they
+  // later subscribe with this same phone number.
+  isGuest: boolean('is_guest').notNull().default(false),
+  guestMessageCount: integer('guest_message_count').notNull().default(0),
   // Guardian-initiated pause: Mae (COMPANION_NAME) stops initiating (still replies) until this passes
   pausedUntil: timestamp('paused_until'),
   pausedAt: timestamp('paused_at'),
