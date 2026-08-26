@@ -265,6 +265,7 @@ async function processParent(parent: ParentWithContext) {
     reminders: parent.reminders.map(r => r.text),
     unansweredStreak: unanswered,
     isFirstContact: recentLogs.length === 0,
+    selfSetup: parent.selfSetup,
   })
 
   console.log(`[heartbeat] ${parent.name}: ${decision.action} — ${decision.reason}`)

@@ -124,6 +124,7 @@ export type HeartbeatContext = {
   reminders: string[]
   unansweredStreak: number
   isFirstContact: boolean
+  selfSetup: boolean
 }
 
 export async function decideHeartbeat(ctx: HeartbeatContext): Promise<HeartbeatDecision> {
@@ -150,7 +151,7 @@ Reminders to track: ${remindersText}
 Today's interactions so far:
 ${logsText}
 
-${ctx.isFirstContact ? `This would be the very FIRST message you've ever sent this person. If you choose MESSAGE, briefly introduce yourself by name and mention their family asked you to check in and that you'll share how they're doing with them — say it warmly, like a friend being introduced, not like a legal disclaimer, then move naturally into a light, easy question.` : ''}
+${ctx.isFirstContact ? `This would be the very FIRST message you've ever sent this person. If you choose MESSAGE, briefly introduce yourself by name${ctx.selfSetup ? ` and what you're here for (a daily friendly check-in) — do NOT mention family or a guardian asking you to reach out, nobody set this up but them` : ` and mention their family asked you to check in and that you'll share how they're doing with them`} — say it warmly, like a friend being introduced, not like a legal disclaimer, then move naturally into a light, easy question.` : ''}
 
 Unanswered streak: they have not replied to your last ${ctx.unansweredStreak} message(s).
 
