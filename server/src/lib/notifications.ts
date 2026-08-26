@@ -32,7 +32,7 @@ export type SummaryPayload = {
   moodSentence: string
   notableMoments: string[]
   companionNote: string
-  stats: { checkins: number; calls: number; alerts: number }
+  stats: { checkins: number; alerts: number }
 }
 
 // ─── Gmail via Resend ─────────────────────────────────────────────────────────
@@ -96,7 +96,6 @@ export async function sendSummaryEmail(payload: SummaryPayload) {
         <div style="display: flex; gap: 12px; margin-bottom: 16px;">
           ${[
             { label: 'Check-ins', value: payload.stats.checkins },
-            { label: 'Calls made', value: payload.stats.calls },
             { label: 'Alerts', value: payload.stats.alerts },
           ].map(s => `
             <div style="flex: 1; background: white; border-radius: 14px; padding: 16px; text-align: center;">

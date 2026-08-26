@@ -1063,10 +1063,9 @@ export default function Dashboard() {
                   <p className="text-sm font-medium text-[#1A1A1A] capitalize">{summary.overallMood}</p>
                   <p className="text-xs text-[#646D7A] mt-0.5">{summary.moodSentence}</p>
                 </div>
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-2 gap-3 mb-4">
                   {[
                     { label: 'Check-ins', value: String(summary.stats.checkins) },
-                    { label: 'Calls made', value: String(summary.stats.calls) },
                     { label: 'Alerts', value: String(summary.stats.alerts) },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-[#F7F5F0] rounded-2xl p-4 text-center">

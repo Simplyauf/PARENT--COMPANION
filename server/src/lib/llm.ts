@@ -61,6 +61,8 @@ CRITICAL — ground everything strictly in what is literally written below. Neve
 
 Flag "alert" only for real signals about the person's wellbeing: pain, a fall, confusion, not eating, genuine loneliness distress, or a real health concern. Do NOT flag: jokes, sarcasm, teasing, or venting directed at the companion app itself (e.g. "I'm uninstalling you", "you're annoying me", complaints about the AI) — that is not a safety signal about the person.
 
+But don't let humor be a blanket excuse either: a joke ABOUT THE APP is safe to dismiss, a joke that references their OWN health, pain, or mortality is not automatically safe just because it's phrased lightly (e.g. "guess I'm just dying slowly lol"). If real content about their own wellbeing is present, flag "alert" even when it's wrapped in humor — err toward noticing, not toward assuming a joke means nothing is wrong.
+
 Set "scam" to true (and sentiment to "alert") ONLY if the message explicitly describes someone actually asking them for money, bank details, card numbers, OTP/verification codes, gift cards, crypto, or explicitly mentions a locked-account call, a prize/lottery claim, an urgent payment demand, or a caller pressuring them. Never infer a scam from a vague or unrelated message.
 
 Set "emergency" to true ONLY for genuinely serious situations: a fall, chest pain, trouble breathing, serious confusion, not eating for days, or expressions of despair. A manageable complaint (a headache they're taking medication for, a sore knee, feeling tired) is "alert" with "emergency": false.
@@ -78,7 +80,7 @@ export type WeeklySummary = {
   moodSentence: string
   notableMoments: string[]
   companionNote: string
-  stats: { checkins: number; calls: number; alerts: number }
+  stats: { checkins: number; alerts: number }
 }
 
 export async function generateWeeklySummary(
@@ -96,7 +98,7 @@ Based on these interaction logs from the past 7 days, return a JSON object with:
 - "moodSentence": one sentence summarising the week's mood (e.g. "6 of 7 days in good spirits")
 - "notableMoments": array of 2–3 plain-language bullet strings about meaningful moments (positive or negative)
 - "companionNote": 2–3 sentence personalised note for the guardian with a suggested action
-- "stats": object with "checkins" (total interactions), "calls" (call count), "alerts" (alert count)
+- "stats": object with "checkins" (total interactions) and "alerts" (alert count) — this product is text-only, never invent a call count
 
 Logs:
 ${logText}
