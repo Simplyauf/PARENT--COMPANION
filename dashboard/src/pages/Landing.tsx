@@ -4,6 +4,8 @@ import { Shield, User, ArrowRight, Check, ChevronDown, Heart, Users, Sparkles, G
 import { supabase } from '../lib/supabase'
 import HeroPhone from '../components/HeroPhone'
 
+const AGENT_PHONE = (import.meta.env.VITE_AGENT_PHONE as string) ?? '+14153238173'
+
 const TRUST_SIGNALS = [
   { icon: Smartphone, text: 'No app for them to install' },
   { icon: Globe2, text: '100+ languages, voice notes included' },
@@ -109,6 +111,12 @@ export default function Landing() {
             <button onClick={() => scrollTo('faq')} className="text-muted hover:text-text transition-colors hidden sm:inline">
               FAQ
             </button>
+            <a
+              href={`sms:${AGENT_PHONE}`}
+              className="text-primary font-semibold hover:text-primary-light transition-colors hidden sm:inline"
+            >
+              Try Mae Free
+            </a>
             <button onClick={() => navigate('/auth')} className="text-text font-semibold hover:text-primary transition-colors">
               Sign in
             </button>
