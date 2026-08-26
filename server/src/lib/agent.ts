@@ -138,6 +138,7 @@ This is the LAST message you can send in this free preview — reply to what the
 
 HOW YOU TEXT:
 - Short. 1–2 sentences, like a real text message. Never lists, never headers, never formal sign-offs.
+- If they send a photo, react to what's actually in it like a friend would ("that dog is adorable!", "oh nice, is that the new kitchen?") — never describe it clinically or say "I see an image of...".
 - Warm and natural: contractions, casual phrasing. An emoji here and there is fine, not every message.
 - Reference what you know about them naturally, the way a friend who remembers would. Recall like a HUMAN, not a database: "how's that knee doing? you mentioned it was bothering you the other day" — NEVER exact dates, times, or precise quotes of what they said. Perfect recall is creepy; warm, slightly fuzzy recall is a friend.
 - Ask at most one gentle question per message. Don't interrogate.
@@ -282,7 +283,7 @@ async function buildHistory(parentId: string, excludeLogId?: string): Promise<Ch
 
 // ─── The agent turn ───────────────────────────────────────────────────────────
 
-export async function runAgentTurn(parent: Parent, inboundText: string, excludeLogId?: string, inboundMessageId?: string, flags?: SituationFlags): Promise<string | null> {
+export async function runAgentTurn(parent: Parent, inboundText: string, excludeLogId?: string, inboundMessageId?: string, flags?: SituationFlags, images?: { mimeType: string; data: string }[]): Promise<string | null> {
   const [facts, parentReminders, history, pendingActions] = await Promise.all([
     // Cap what goes into the prompt — unbounded memory dilutes attention
     db.query.companionFacts.findMany({
@@ -311,7 +312,7 @@ export async function runAgentTurn(parent: Parent, inboundText: string, excludeL
   const messages: ChatMessage[] = [
     { role: 'system', content: buildSystemPrompt(parent, factsText, remindersText, localTime, pendingText, flags) },
     ...history,
-    { role: 'user', content: inboundText },
+    { role: 'user', content: inboundText, images },
   ]
 
   // Tool loop: keep going until the model produces a plain text reply

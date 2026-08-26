@@ -11,6 +11,7 @@ export const COMPANION_NAME = process.env.COMPANION_NAME ?? 'Mae'
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | null
+  images?: { mimeType: string; data: string }[] // base64, user messages only
   tool_calls?: ToolCall[]
   tool_call_id?: string
 }

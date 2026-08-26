@@ -134,6 +134,22 @@ async function handleMessage(msg: Record<string, unknown>) {
       }
     }
 
+    // Photos: download and pass straight to the agent as image content —
+    // Mae reacts to what's in them the same way she'd react to a text
+    const imageAttachments = attachments.filter(a => a.mimeType?.startsWith('image/'))
+    const images: { mimeType: string; data: string }[] = []
+    for (const img of imageAttachments) {
+      try {
+        const res = await fetch(img.url)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = Buffer.from(await res.arrayBuffer()).toString('base64')
+        images.push({ mimeType: img.mimeType, data })
+      } catch (err) {
+        console.error('[photo] download failed:', (err as Error).message)
+      }
+    }
+    if (!text && images.length) text = '[sent a photo]'
+
     if (!text) {
       // Voice note we couldn't understand (or unsupported attachment) — say so
       // instead of silently ignoring an elderly person's message
@@ -192,7 +208,7 @@ async function handleMessage(msg: Record<string, unknown>) {
         emergency: analysis.emergency === true,
         scam: analysis.scam === true,
         guestCapReached,
-      })
+      }, images.length ? images : undefined)
       if (reply) console.log(`[agent] replied to ${parent.name}: "${reply.slice(0, 80)}"`)
     } catch (err) {
       console.error('[agent] reply failed:', (err as Error).message)

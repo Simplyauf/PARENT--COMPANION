@@ -37,7 +37,11 @@ function toGeminiContents(messages: ChatMessage[]): { systemInstruction: string;
     }
 
     if (m.role === 'user') {
-      contents.push({ role: 'user', parts: [{ text: m.content ?? '' }] })
+      const parts: Part[] = [{ text: m.content ?? '' }]
+      for (const img of m.images ?? []) {
+        parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } })
+      }
+      contents.push({ role: 'user', parts })
       continue
     }
 
