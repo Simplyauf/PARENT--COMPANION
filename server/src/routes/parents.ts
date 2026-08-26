@@ -130,7 +130,13 @@ export const parentRoutes: FastifyPluginAsync = async (fastify) => {
     // Register phone with Claw Messenger so inbound replies are routed to us
     await registerPhone(phone).catch(err => console.warn('[claw] phone register failed:', err.message))
 
-    return reply.status(201).send(parent)
+    // Converted from a guest? Let the frontend know so Activate's "say hello"
+    // step doesn't ceremonially reintroduce Mae to someone she's already talked to
+    const priorMessageCount = existingGuest
+      ? await db.$count(activityLogs, eq(activityLogs.parentId, parent.id))
+      : 0
+
+    return reply.status(201).send({ ...parent, priorMessageCount })
   })
 
   // GET /api/parents/:id

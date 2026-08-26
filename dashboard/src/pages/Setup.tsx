@@ -228,7 +228,7 @@ export default function Setup() {
         selfSetup: !isGuardian,
         reminders: reminders.map(r => r.trim()).filter(Boolean),
       })
-      navigate('/activate', { state: { parentId: parent.id, parentName: parent.name } })
+      navigate('/activate', { state: { parentId: parent.id, parentName: parent.name, priorMessageCount: parent.priorMessageCount } })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'capacity_reached') {
         setBillingGate('at-capacity')

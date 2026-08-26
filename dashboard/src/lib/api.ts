@@ -60,6 +60,9 @@ export type ApiFact = { id: string; parentId: string; label: string; value: stri
 export type ApiReminder = { id: string; parentId: string; text: string }
 
 export type ApiParentDetail = Omit<ApiParent, 'role' | 'notifyVia' | 'lastContact'> & {
+  // Only present on the create response, when this parent was converted
+  // from a guest who already texted Mae before subscribing
+  priorMessageCount?: number
   companionFacts: ApiFact[]
   reminders: ApiReminder[]
   summarySchedule: {

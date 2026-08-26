@@ -14,9 +14,12 @@ function formatPhone(p: string) {
 export default function Activate() {
   const navigate = useNavigate()
   const location = useLocation()
-  const state = location.state as { parentId?: string; parentName?: string } | null
+  const state = location.state as { parentId?: string; parentName?: string; priorMessageCount?: number } | null
   const parentId = state?.parentId
   const firstName = state?.parentName?.split(' ')[0]
+  // Converted from a guest who already texted Mae before subscribing —
+  // this isn't actually their first hello, so don't frame it like one
+  const hasHistory = (state?.priorMessageCount ?? 0) > 0
 
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [error, setError] = useState('')
@@ -68,21 +71,30 @@ export default function Activate() {
             className="text-3xl text-[#1A1A1A] mb-3"
             style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}
           >
-            Say hello to {firstName ?? 'your parent'}
+            {hasHistory ? `You're all set with ${firstName ?? 'them'}` : `Say hello to ${firstName ?? 'your parent'}`}
           </h2>
           <p className="text-[#646D7A] text-sm leading-relaxed">
-            Mae — {firstName ? `${firstName}'s` : 'their'} AI companion — sends the first text. {firstName ?? 'Your parent'} doesn't have to do anything but reply.
+            {hasHistory
+              ? `Mae already got to know ${firstName ?? 'them'} during their free preview — no need for a first hello, she'll just keep going from there. You can also send an extra check-in right now if you'd like.`
+              : `Mae — ${firstName ? `${firstName}'s` : 'their'} AI companion — sends the first text. ${firstName ?? 'Your parent'} doesn't have to do anything but reply.`}
           </p>
         </div>
 
         {/* Visual instruction */}
         <div className="bg-white border border-[#E5E1D8] rounded-2xl p-6 mb-6">
           <div className="flex flex-col gap-3">
-            {[
-              { step: '1', text: 'Tap the button — Mae texts them a warm hello right now' },
-              { step: '2', text: `A message from Mae (${formatPhone(AGENT_PHONE)}) arrives on their phone` },
-              { step: '3', text: 'They just reply — the friendship begins from there' },
-            ].map(({ step, text }) => (
+            {(hasHistory
+              ? [
+                  { step: '1', text: `Mae already has ${firstName ?? 'their'} number saved from before` },
+                  { step: '2', text: 'She checks in on her normal schedule from here on' },
+                  { step: '3', text: "Send an extra check-in below if you'd like one right now" },
+                ]
+              : [
+                  { step: '1', text: 'Tap the button — Mae texts them a warm hello right now' },
+                  { step: '2', text: `A message from Mae (${formatPhone(AGENT_PHONE)}) arrives on their phone` },
+                  { step: '3', text: 'They just reply — the friendship begins from there' },
+                ]
+            ).map(({ step, text }) => (
               <div key={step} className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-[#1B4D3E] text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
                   {step}
@@ -109,7 +121,9 @@ export default function Activate() {
           ) : (
             <div className="bg-[#EDEAE2] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[85%]">
               <p className="text-sm text-[#1A1A1A] leading-relaxed">
-                {previewText ?? `Hi ${firstName ?? 'there'}! ${firstName ? "Your family" : "Someone in your family"} asked me to check in — just wanted to say hello and see how you're doing.`}
+                {previewText ?? (hasHistory
+                  ? `Hey ${firstName ?? 'there'}, just checking in — how's your day going?`
+                  : `Hi ${firstName ?? 'there'}! ${firstName ? "Your family" : "Someone in your family"} asked me to check in — just wanted to say hello and see how you're doing.`)}
               </p>
             </div>
           )}
@@ -131,7 +145,7 @@ export default function Activate() {
               : 'bg-[#1B4D3E] text-white hover:bg-[#2D6A56] disabled:opacity-60'
           }`}
         >
-          {status === 'idle' && <><MessageCircle size={18} /> Send {firstName ? `${firstName}'s` : 'the'} First Hello</>}
+          {status === 'idle' && <><MessageCircle size={18} /> {hasHistory ? 'Send a check-in now' : `Send ${firstName ? `${firstName}'s` : 'the'} First Hello`}</>}
           {status === 'sending' && <>Sending…</>}
           {status === 'sent' && <><Check size={18} /> Sent! Check {firstName ? `${firstName}'s` : 'their'} phone</>}
           {status === 'error' && <><MessageCircle size={18} /> Try again</>}
