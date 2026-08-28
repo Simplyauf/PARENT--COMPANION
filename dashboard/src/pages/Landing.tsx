@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shield, User, ArrowRight, Check, ChevronDown, Heart, Users, Sparkles, Globe2, Smartphone, Mail, MessageCircle } from 'lucide-react'
+import { Shield, User, ArrowRight, Check, ChevronDown, Heart, Users, Sparkles, Globe2, Smartphone, Mail, MessageCircle, Menu, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import HeroPhone from '../components/HeroPhone'
 
@@ -84,6 +84,7 @@ export default function Landing() {
   const navigate = useNavigate()
   const [signedIn, setSignedIn] = useState(false)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [cycle, setCycle] = useState<'monthly' | 'yearly'>('monthly')
 
   useEffect(() => {
@@ -104,12 +105,19 @@ export default function Landing() {
       <nav className="sticky top-0 z-10 bg-bg/90 backdrop-blur border-b border-border">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <img src="/logo_3.png" alt="MaeMate" width={400} height={139} className="h-8 w-auto" />
-          <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-center gap-4 sm:gap-6 text-sm">
             <button onClick={() => scrollTo('pricing')} className="text-muted hover:text-text transition-colors hidden sm:inline">
               Pricing
             </button>
             <button onClick={() => scrollTo('faq')} className="text-muted hover:text-text transition-colors hidden sm:inline">
               FAQ
+            </button>
+            <button
+              onClick={() => setMobileMenuOpen(o => !o)}
+              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+              className="sm:hidden text-text p-1 -m-1"
+            >
+              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
             <button onClick={() => navigate('/auth')} className="text-text font-semibold hover:text-primary transition-colors">
               Login
@@ -122,6 +130,22 @@ export default function Landing() {
             </a>
           </div>
         </div>
+        {mobileMenuOpen && (
+          <div className="sm:hidden border-t border-border bg-bg px-4 py-2 flex flex-col">
+            <button
+              onClick={() => { scrollTo('pricing'); setMobileMenuOpen(false) }}
+              className="text-left py-3 text-text font-medium border-b border-border"
+            >
+              Pricing
+            </button>
+            <button
+              onClick={() => { scrollTo('faq'); setMobileMenuOpen(false) }}
+              className="text-left py-3 text-text font-medium"
+            >
+              FAQ
+            </button>
+          </div>
+        )}
       </nav>
 
       {/* Hero — the phone's right edge and the nav button sit at roughly the
