@@ -130,8 +130,10 @@ export const updateParent = (id: string, body: Partial<{
 export const requestCheckin = (parentId: string, text?: string) =>
   api<{ ok: true; message: string }>(`/api/parents/${parentId}/checkin`, { method: 'POST', body: JSON.stringify({ text }) })
 
+export type CheckinPreview = { parentMustInitiate: true } | { parentMustInitiate: false; text: string }
+
 export const previewCheckin = (parentId: string) =>
-  api<{ text: string }>(`/api/parents/${parentId}/checkin/preview`, { method: 'POST', body: '{}' })
+  api<CheckinPreview>(`/api/parents/${parentId}/checkin/preview`, { method: 'POST', body: '{}' })
 
 export const addFact = (parentId: string, label: string, value: string) =>
   api<ApiFact>(`/api/parents/${parentId}/facts`, { method: 'POST', body: JSON.stringify({ label, value }) })

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { MessageCircle, ArrowLeft, Check, AlertCircle } from 'lucide-react'
-import { requestCheckin, previewCheckin } from '../lib/api'
+import { MessageCircle, ArrowLeft, Check, AlertCircle, Copy, Share2 } from 'lucide-react'
+import { requestCheckin, previewCheckin, type CheckinPreview } from '../lib/api'
 
 const AGENT_PHONE = (import.meta.env.VITE_AGENT_PHONE as string) ?? '+14153238173'
+const AGENT_SMS_LINK = `sms:${AGENT_PHONE}?body=${encodeURIComponent('Hello')}`
 
 function formatPhone(p: string) {
   // +14153238173 → +1 (415) 323-8173
@@ -25,18 +26,37 @@ export default function Activate() {
   const [error, setError] = useState('')
 
   // Draft the first message up front so the guardian can see exactly what
-  // their parent will receive before anything actually sends
-  const [previewText, setPreviewText] = useState<string | null>(null)
+  // their parent will receive before anything actually sends — unless we're
+  // near Claw's rolling new-recipient ceiling, in which case Mae can't reach
+  // out first at all and the parent needs to text her instead
+  const [preview, setPreview] = useState<CheckinPreview | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const previewText = preview && !preview.parentMustInitiate ? preview.text : null
+  const parentMustInitiate = preview?.parentMustInitiate === true
 
   useEffect(() => {
     if (!parentId) return
     setPreviewLoading(true)
     previewCheckin(parentId)
-      .then(({ text }) => setPreviewText(text))
+      .then(setPreview)
       .catch(() => { /* fall back to generating fresh at send time */ })
       .finally(() => setPreviewLoading(false))
   }, [parentId])
+
+  const [copied, setCopied] = useState(false)
+  const shareMessage = `Hi${firstName ? ` ${firstName}` : ''}, I set up an AI companion called Mae to check in on you, could you text her to say hi? Just tap this and hit send: ${AGENT_SMS_LINK}`
+
+  const handleShare = async () => {
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ text: shareMessage })
+        return
+      } catch { /* user cancelled or share failed — fall back to copy */ }
+    }
+    await navigator.clipboard.writeText(shareMessage)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const handleActivate = async () => {
     if (!parentId || status === 'sending' || status === 'sent') return
@@ -71,15 +91,58 @@ export default function Activate() {
             className="text-3xl text-[#1A1A1A] mb-3"
             style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 500 }}
           >
-            {hasHistory ? `You're all set with ${firstName ?? 'them'}` : `Say hello to ${firstName ?? 'your parent'}`}
+            {hasHistory
+              ? `You're all set with ${firstName ?? 'them'}`
+              : parentMustInitiate
+                ? `Ask ${firstName ?? 'them'} to say hi first`
+                : `Say hello to ${firstName ?? 'your parent'}`}
           </h2>
           <p className="text-[#646D7A] text-sm leading-relaxed">
             {hasHistory
               ? `Mae already got to know ${firstName ?? 'them'} during their free preview — no need for a first hello, she'll just keep going from there. You can also send an extra check-in right now if you'd like.`
-              : `Mae — ${firstName ? `${firstName}'s` : 'their'} AI companion — sends the first text. ${firstName ?? 'Your parent'} doesn't have to do anything but reply.`}
+              : parentMustInitiate
+                ? `We're seeing high signup volume right now, so Mae can't reach out first for a bit. Have ${firstName ?? 'them'} text her instead, one tap, then she takes it from there.`
+                : `Mae — ${firstName ? `${firstName}'s` : 'their'} AI companion — sends the first text. ${firstName ?? 'Your parent'} doesn't have to do anything but reply.`}
           </p>
         </div>
 
+        {parentMustInitiate && !hasHistory ? (
+          <>
+            <div className="bg-white border border-[#E5E1D8] rounded-2xl p-6 mb-6">
+              <div className="flex flex-col gap-3">
+                {[
+                  { step: '1', text: `Share the message below with ${firstName ?? 'them'} (text, call, WhatsApp, however works)` },
+                  { step: '2', text: `${firstName ?? 'They'} tap it — it opens a text to Mae with "Hello" already filled in` },
+                  { step: '3', text: 'They just hit send, and Mae takes it from there' },
+                ].map(({ step, text }) => (
+                  <div key={step} className="flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-[#1B4D3E] text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
+                      {step}
+                    </span>
+                    <p className="text-sm text-[#1A1A1A]">{text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-xs font-medium text-[#646D7A] uppercase tracking-widest mb-2">
+                Message to share
+              </p>
+              <div className="bg-[#EDEAE2] rounded-2xl px-4 py-3">
+                <p className="text-sm text-[#1A1A1A] leading-relaxed">{shareMessage}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleShare}
+              className="w-full rounded-xl py-4 text-sm font-medium flex items-center justify-center gap-2.5 transition-colors mb-4 bg-[#1B4D3E] text-white hover:bg-[#2D6A56]"
+            >
+              {copied ? <><Check size={18} /> Copied!</> : typeof navigator.share === 'function' ? <><Share2 size={18} /> Share with {firstName ?? 'them'}</> : <><Copy size={18} /> Copy message</>}
+            </button>
+          </>
+        ) : (
+        <>
         {/* Visual instruction */}
         <div className="bg-white border border-[#E5E1D8] rounded-2xl p-6 mb-6">
           <div className="flex flex-col gap-3">
@@ -158,6 +221,8 @@ export default function Activate() {
           >
             Go to dashboard
           </button>
+        )}
+        </>
         )}
 
         {!parentId && (

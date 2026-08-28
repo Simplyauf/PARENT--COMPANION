@@ -123,7 +123,7 @@ async function executeTool(parentId: string, call: ToolCall): Promise<string> {
 
 // ─── Persona ──────────────────────────────────────────────────────────────────
 
-type SituationFlags = { emergency: boolean; scam: boolean; guestCapReached?: boolean }
+type SituationFlags = { emergency: boolean; scam: boolean; guestCapReached?: boolean; isFirstContact?: boolean }
 
 function buildSystemPrompt(parent: Parent, facts: string, remindersText: string, localTime: string, pendingFollowups: string, flags?: SituationFlags) {
   const whoYouAre = parent.isGuest
@@ -141,6 +141,8 @@ ${flags?.emergency ? `
 🚨 URGENT — WHAT THEY JUST SAID WAS FLAGGED AS A POSSIBLE REAL EMERGENCY (a fall, chest pain, trouble breathing, or similar). This is your ABSOLUTE top priority this message, above everything else including any scam flag below. Stay calm and direct, not panicked or dramatic — a steady friend, not a siren. Ask if they're safe RIGHT NOW and whether anyone is with them, and clearly urge them to call emergency services themselves (or a neighbor/family member) if it feels serious. If they downplay it, gently confirm they're really okay before moving to anything else — don't just chat normally past this. Don't exaggerate beyond what they told you, but don't let it go either.` : ''}
 ${flags?.scam ? `
 ⚠️ WHAT THEY JUST SAID WAS FLAGGED AS A POSSIBLE SCAM ATTEMPT.${flags?.emergency ? ' Secondary to the emergency above — address their safety first, then weave this in.' : ' Your first priority this message:'} gently but firmly urge them not to send anything, share any code, or click any link until family confirms it's real ("please don't send them anything yet — let's have your family double-check first, these things are often fake"). Stay calm and warm, never alarmist. Their family is alerted automatically; you don't need to mention that unless it reassures them.` : ''}
+${flags?.isFirstContact ? `
+This is the very first message you two have ever exchanged, and THEY texted YOU first, unprompted — you haven't reached out to them before. Warmly introduce yourself by name in this reply. ${parent.isGuest ? "Mention briefly that this is a free preview of what daily check-ins are like." : parent.selfSetup ? "No one else set this up — it's just them, so don't mention family." : "Mention that their family asked you to keep in touch, the way you'd introduce yourself meeting a friend's parent for the first time."} Then respond warmly to whatever they actually said.` : ''}
 ${flags?.guestCapReached ? `
 This is the LAST message you can send in this free preview — reply to what they just said normally first, then naturally wrap up by warmly letting them know this preview is ending, and that they (or whoever they'd want you checking in on) can keep talking to you for real at maemate.com. Don't make it feel abrupt, salesy, or like a system message — just an honest heads-up from a friend.` : ''}
 
@@ -324,8 +326,10 @@ export async function runAgentTurn(parent: Parent, inboundText: string, excludeL
     hour12: true,
   }).format(new Date())
 
+  const resolvedFlags: SituationFlags = { emergency: false, scam: false, ...flags, isFirstContact: history.length === 0 }
+
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt(parent, factsText, remindersText, localTime, pendingText, flags) },
+    { role: 'system', content: buildSystemPrompt(parent, factsText, remindersText, localTime, pendingText, resolvedFlags) },
     ...history,
     { role: 'user', content: inboundText, images },
   ]

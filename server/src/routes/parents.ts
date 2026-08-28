@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { db } from '../db/index.js'
 import { parents, guardianParentLinks, companionFacts, reminders, summarySchedules, users, activityLogs, subscriptions } from '../db/schema.js'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, gte } from 'drizzle-orm'
 import { registerPhone } from '../lib/claw.js'
 import { chat, COMPANION_NAME } from '../lib/llm.js'
 import { sendIMessageCheckin } from '../lib/notifications.js'
@@ -27,6 +27,23 @@ const UpdateParentBody = CreateParentBody.partial().omit({ notifyVia: true, guar
 })
 
 const normalizePhone = (p: string) => p.replace(/[^\d+]/g, '')
+
+// Claw Messenger throttles new first-contact sends past 20 distinct new
+// recipients per rolling 24h (Apple's own spam scrutiny of unsolicited first
+// messages — not adjustable for us). Stop reaching out first once we're
+// within range of that ceiling, leaving real headroom, and fall back to
+// asking the guardian to have their parent text Mae first instead — a reply
+// within an existing conversation isn't subject to this limit at all.
+const MAE_INITIATES_FIRST_DAILY_LIMIT = 12
+
+async function shouldParentInitiateFirst(): Promise<boolean> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  const recentFirstContacts = await db.$count(
+    parents,
+    and(eq(parents.isGuest, false), gte(parents.createdAt, since))
+  )
+  return recentFirstContacts >= MAE_INITIATES_FIRST_DAILY_LIMIT
+}
 
 export const parentRoutes: FastifyPluginAsync = async (fastify) => {
 
@@ -234,10 +251,17 @@ ${situation} ${isFirstContact
     })
     if (!parent) return reply.status(404).send({ error: 'Not found' })
 
+    // Close to the rolling-24h new-recipient ceiling — don't have Mae reach
+    // out first at all. No point drafting a preview for a message we're not
+    // going to send; the guardian's parent will need to text in instead.
+    if (await shouldParentInitiateFirst()) {
+      return { parentMustInitiate: true as const }
+    }
+
     const text = await generateCheckinText(parent)
     if (!text) return reply.status(502).send({ error: 'Could not generate message' })
 
-    return { text }
+    return { text, parentMustInitiate: false as const }
   })
 
   // POST /api/parents/:id/checkin — send an immediate check-in text right now.
