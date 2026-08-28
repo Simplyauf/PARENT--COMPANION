@@ -128,32 +128,32 @@ export default function Landing() {
           only makes visual sense pre-scroll, so it's absolutely positioned
           within this wrapper rather than sticky like the nav itself */}
       <section className="relative flex flex-col items-center justify-center px-4 py-12 lg:py-20">
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="absolute right-0 top-[-64px] w-[35%] h-[500px] text-accent pointer-events-none hidden lg:block z-20"
-          fill="none"
-        >
-          <path
-            d="M62 92C78 78 88 55 90 15"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-            markerEnd="url(#hero-arrowhead)"
-          />
-          <defs>
-            <marker id="hero-arrowhead" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
-              <path d="M0 0L7 3.5L0 7Z" fill="currentColor" />
-            </marker>
-          </defs>
-        </svg>
-        <p
-          className="absolute right-[8%] top-[220px] text-accent text-lg hidden lg:block z-20 -rotate-6"
-          style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
-        >
-          no signup required!
-        </p>
+        {/* Anchored to the SAME max-w-5xl/px-4 box the nav uses, so "right"
+            here lines up with the nav button's actual position, not the
+            edge of the full-width section */}
+        <div className="absolute inset-x-0 top-[-24px] h-[420px] max-w-5xl mx-auto px-4 pointer-events-none z-20 hidden lg:block">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute right-4 top-0 w-[28%] h-full text-accent" fill="none">
+            <path
+              d="M55 96C68 80 82 45 92 6"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+              markerEnd="url(#hero-arrowhead)"
+            />
+            <defs>
+              <marker id="hero-arrowhead" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
+                <path d="M0 0L7 3.5L0 7Z" fill="currentColor" />
+              </marker>
+            </defs>
+          </svg>
+          <p
+            className="absolute right-[6%] top-[190px] text-accent text-lg -rotate-6"
+            style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
+          >
+            no signup required!
+          </p>
+        </div>
         <div className="w-full max-w-md lg:max-w-5xl">
           {signedIn && (
             <button
@@ -166,10 +166,6 @@ export default function Landing() {
           )}
 
           <div className="lg:grid lg:grid-cols-2 lg:gap-16 lg:items-center">
-            <div className="flex justify-center mb-6 lg:mb-0 lg:order-2">
-              <HeroPhone />
-            </div>
-
             <div className="lg:order-1">
               <div className="text-center lg:text-left mb-6">
                 <h1
@@ -222,6 +218,10 @@ export default function Landing() {
                   Sign in
                 </button>
               </p>
+            </div>
+
+            <div className="flex justify-center mb-6 lg:mb-0 lg:order-2">
+              <HeroPhone />
             </div>
           </div>
         </div>
