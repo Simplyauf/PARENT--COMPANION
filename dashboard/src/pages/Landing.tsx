@@ -124,7 +124,7 @@ export default function Landing() {
             </button>
             <a
               href={`sms:${AGENT_PHONE}`}
-              className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors inline-block"
+              className="hidden sm:inline-block bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors"
             >
               Try MaeMate for Free
             </a>
@@ -176,14 +176,23 @@ export default function Landing() {
           </p>
         </div>
         <div className="w-full max-w-md lg:max-w-5xl">
+          {/* Mobile-only — the nav's CTA is hidden below sm, so new visitors
+              need this prominent slot instead. Always shows here regardless
+              of sign-in state; "Open your dashboard" is desktop-only below. */}
+          <a
+            href={`sms:${AGENT_PHONE}`}
+            className="sm:hidden w-full mb-6 bg-primary text-white rounded-xl py-2.5 px-3 text-xs font-medium flex items-center justify-center gap-1.5"
+          >
+            Try MaeMate for Free
+          </a>
+
           {signedIn && (
             <button
               onClick={() => navigate('/dashboard')}
-              className="w-full mb-6 bg-primary text-white rounded-xl py-2.5 sm:py-3.5 px-3 sm:px-4 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 sm:gap-2 leading-tight hover:bg-primary-light transition-colors"
+              className="hidden sm:flex w-full mb-6 bg-primary text-white rounded-xl py-3.5 px-4 text-sm font-medium items-center justify-center gap-2 leading-tight hover:bg-primary-light transition-colors"
             >
               You're already signed in, open your dashboard
-              <ArrowRight size={14} className="flex-shrink-0 sm:hidden" />
-              <ArrowRight size={16} className="flex-shrink-0 hidden sm:block" />
+              <ArrowRight size={16} className="flex-shrink-0" />
             </button>
           )}
 
