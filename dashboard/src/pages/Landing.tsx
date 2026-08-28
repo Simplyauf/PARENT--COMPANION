@@ -111,21 +111,41 @@ export default function Landing() {
             <button onClick={() => scrollTo('faq')} className="text-muted hover:text-text transition-colors hidden sm:inline">
               FAQ
             </button>
-            <a
-              href={`sms:${AGENT_PHONE}`}
-              className="text-primary font-semibold hover:text-primary-light transition-colors hidden sm:inline"
-            >
-              Try Mae Free
-            </a>
             <button onClick={() => navigate('/auth')} className="text-text font-semibold hover:text-primary transition-colors">
-              Sign in
+              Login
             </button>
-            <button
-              onClick={() => scrollTo('hero-select')}
-              className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors"
-            >
-              Get Started
-            </button>
+            <div className="relative">
+              <svg
+                viewBox="0 0 90 50"
+                className="absolute -top-9 -left-14 w-[90px] h-[50px] text-accent pointer-events-none hidden sm:block"
+                fill="none"
+              >
+                <path
+                  d="M4 6C20 4 55 6 78 32"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  markerEnd="url(#nav-arrowhead)"
+                />
+                <defs>
+                  <marker id="nav-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                    <path d="M0 0L8 4L0 8Z" fill="currentColor" />
+                  </marker>
+                </defs>
+              </svg>
+              <span
+                className="absolute -top-8 -left-16 text-accent text-sm hidden sm:block"
+                style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
+              >
+                it's free!
+              </span>
+              <a
+                href={`sms:${AGENT_PHONE}`}
+                className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors inline-block"
+              >
+                Try MaeMate for Free
+              </a>
+            </div>
           </div>
         </div>
       </nav>
@@ -255,7 +275,36 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-8 max-w-2xl mx-auto items-start">
+          <div className="grid sm:grid-cols-3 gap-6 max-w-4xl mx-auto items-start">
+            <div className="rounded-2xl p-7 border border-dashed border-border bg-surface shadow-sm flex flex-col">
+              <div className="w-11 h-11 rounded-full flex items-center justify-center mb-4 bg-bg">
+                <MessageCircle size={20} className="text-primary" />
+              </div>
+              <h3 className="text-2xl font-serif font-medium text-text mb-1">Free</h3>
+              <p className="text-muted text-xs mb-5">Try Mae yourself, right now</p>
+
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="text-4xl font-semibold text-text">$0</span>
+              </div>
+              <div className="mb-5" />
+
+              <ul className="space-y-3 mb-7 flex-1">
+                {['No account needed', 'Text Mae directly, right now', 'A handful of messages to get a feel for her'].map((f) => (
+                  <li key={f} className="flex items-start gap-2.5 text-sm text-text">
+                    <Check size={16} className="text-primary flex-shrink-0 mt-0.5" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <a
+                href={`sms:${AGENT_PHONE}`}
+                className="w-full rounded-xl py-3.5 text-sm font-semibold transition-colors text-center bg-bg text-text border border-border hover:border-primary"
+              >
+                Text Mae now
+              </a>
+            </div>
+
             {PLANS.map((plan) => {
               const billing = plan[cycle]
               return (
