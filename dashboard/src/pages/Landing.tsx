@@ -114,54 +114,53 @@ export default function Landing() {
             <button onClick={() => navigate('/auth')} className="text-text font-semibold hover:text-primary transition-colors">
               Login
             </button>
-            <a
-              href={`sms:${AGENT_PHONE}`}
-              className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors inline-block"
-            >
-              Try MaeMate for Free
-            </a>
+            <div className="relative">
+              <svg
+                viewBox="0 0 90 50"
+                className="absolute -top-9 -left-14 w-[90px] h-[50px] text-accent pointer-events-none hidden sm:block"
+                fill="none"
+              >
+                <path
+                  d="M4 6C20 4 55 6 78 32"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  markerEnd="url(#nav-arrowhead)"
+                />
+                <defs>
+                  <marker id="nav-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                    <path d="M0 0L8 4L0 8Z" fill="currentColor" />
+                  </marker>
+                </defs>
+              </svg>
+              <span
+                className="absolute -top-8 -left-16 text-accent text-sm hidden sm:block"
+                style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
+              >
+                no signup!
+              </span>
+              <a
+                href={`sms:${AGENT_PHONE}`}
+                className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors inline-block"
+              >
+                Try MaeMate for Free
+              </a>
+            </div>
           </div>
         </div>
       </nav>
 
-      {/* Hero — the arrow below points from the phone up to the nav CTA,
-          only makes visual sense pre-scroll, so it's absolutely positioned
-          within this wrapper rather than sticky like the nav itself */}
-      <section className="relative flex flex-col items-center justify-center px-4 py-12 lg:py-20">
-        {/* Anchored to the SAME max-w-5xl/px-4 box the nav uses, so "right"
-            here lines up with the nav button's actual position, not the
-            edge of the full-width section */}
-        <div className="absolute inset-x-0 top-[-24px] h-[420px] max-w-5xl mx-auto px-4 pointer-events-none z-20 hidden lg:block">
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute right-4 top-0 w-[28%] h-full text-accent" fill="none">
-            <path
-              d="M55 96C68 80 82 45 92 6"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-              markerEnd="url(#hero-arrowhead)"
-            />
-            <defs>
-              <marker id="hero-arrowhead" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
-                <path d="M0 0L7 3.5L0 7Z" fill="currentColor" />
-              </marker>
-            </defs>
-          </svg>
-          <p
-            className="absolute right-[6%] top-[190px] text-accent text-lg -rotate-6"
-            style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
-          >
-            no signup required!
-          </p>
-        </div>
+      {/* Hero */}
+      <section className="flex flex-col items-center justify-center px-4 py-12 lg:py-20">
         <div className="w-full max-w-md lg:max-w-5xl">
           {signedIn && (
             <button
               onClick={() => navigate('/dashboard')}
-              className="w-full mb-6 bg-primary text-white rounded-xl py-3.5 px-4 text-sm font-medium flex items-center justify-center gap-2 hover:bg-primary-light transition-colors"
+              className="w-full mb-6 bg-primary text-white rounded-xl py-2.5 sm:py-3.5 px-3 sm:px-4 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 sm:gap-2 leading-tight hover:bg-primary-light transition-colors"
             >
               You're already signed in, open your dashboard
-              <ArrowRight size={16} />
+              <ArrowRight size={14} className="flex-shrink-0 sm:hidden" />
+              <ArrowRight size={16} className="flex-shrink-0 hidden sm:block" />
             </button>
           )}
 
