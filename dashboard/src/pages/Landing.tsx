@@ -114,44 +114,43 @@ export default function Landing() {
             <button onClick={() => navigate('/auth')} className="text-text font-semibold hover:text-primary transition-colors">
               Login
             </button>
-            <div className="relative">
-              <svg
-                viewBox="0 0 90 50"
-                className="absolute -top-9 -left-14 w-[90px] h-[50px] text-accent pointer-events-none hidden sm:block"
-                fill="none"
-              >
-                <path
-                  d="M4 6C20 4 55 6 78 32"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  markerEnd="url(#nav-arrowhead)"
-                />
-                <defs>
-                  <marker id="nav-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
-                    <path d="M0 0L8 4L0 8Z" fill="currentColor" />
-                  </marker>
-                </defs>
-              </svg>
-              <span
-                className="absolute -top-8 -left-16 text-accent text-sm hidden sm:block"
-                style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
-              >
-                no signup!
-              </span>
-              <a
-                href={`sms:${AGENT_PHONE}`}
-                className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors inline-block"
-              >
-                Try MaeMate for Free
-              </a>
-            </div>
+            <a
+              href={`sms:${AGENT_PHONE}`}
+              className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors inline-block"
+            >
+              Try MaeMate for Free
+            </a>
           </div>
         </div>
       </nav>
 
-      {/* Hero */}
-      <section className="flex flex-col items-center justify-center px-4 py-12 lg:py-20">
+      {/* Hero — the phone's right edge and the nav button sit at roughly the
+          same horizontal position (~80% from left), so this is a near-
+          vertical curve rather than a long diagonal sweep. Only makes
+          visual sense pre-scroll, so it lives here (not sticky like nav). */}
+      <section className="relative flex flex-col items-center justify-center px-4 py-12 lg:py-20">
+        <div className="absolute right-[17%] top-[-40px] w-[70px] h-[280px] pointer-events-none hidden lg:block z-20">
+          <svg viewBox="0 0 70 280" className="w-full h-full text-accent" fill="none">
+            <path
+              d="M40 260C55 220 15 160 35 90C45 55 30 30 55 10"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              markerEnd="url(#hero-arrowhead)"
+            />
+            <defs>
+              <marker id="hero-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0 0L8 4L0 8Z" fill="currentColor" />
+              </marker>
+            </defs>
+          </svg>
+          <p
+            className="absolute left-[-30px] top-[110px] text-accent text-base -rotate-3 whitespace-nowrap"
+            style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
+          >
+            no signup required!
+          </p>
+        </div>
         <div className="w-full max-w-md lg:max-w-5xl">
           {signedIn && (
             <button
