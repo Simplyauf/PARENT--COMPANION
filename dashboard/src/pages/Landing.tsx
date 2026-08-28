@@ -114,44 +114,46 @@ export default function Landing() {
             <button onClick={() => navigate('/auth')} className="text-text font-semibold hover:text-primary transition-colors">
               Login
             </button>
-            <div className="relative">
-              <svg
-                viewBox="0 0 90 50"
-                className="absolute -top-9 -left-14 w-[90px] h-[50px] text-accent pointer-events-none hidden sm:block"
-                fill="none"
-              >
-                <path
-                  d="M4 6C20 4 55 6 78 32"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  markerEnd="url(#nav-arrowhead)"
-                />
-                <defs>
-                  <marker id="nav-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
-                    <path d="M0 0L8 4L0 8Z" fill="currentColor" />
-                  </marker>
-                </defs>
-              </svg>
-              <span
-                className="absolute -top-8 -left-16 text-accent text-sm hidden sm:block"
-                style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
-              >
-                it's free!
-              </span>
-              <a
-                href={`sms:${AGENT_PHONE}`}
-                className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors inline-block"
-              >
-                Try MaeMate for Free
-              </a>
-            </div>
+            <a
+              href={`sms:${AGENT_PHONE}`}
+              className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors inline-block"
+            >
+              Try MaeMate for Free
+            </a>
           </div>
         </div>
       </nav>
 
-      {/* Hero */}
-      <section className="flex flex-col items-center justify-center px-4 py-12 lg:py-20">
+      {/* Hero — the arrow below points from the phone up to the nav CTA,
+          only makes visual sense pre-scroll, so it's absolutely positioned
+          within this wrapper rather than sticky like the nav itself */}
+      <section className="relative flex flex-col items-center justify-center px-4 py-12 lg:py-20">
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="absolute right-0 top-[-64px] w-[35%] h-[500px] text-accent pointer-events-none hidden lg:block z-20"
+          fill="none"
+        >
+          <path
+            d="M62 92C78 78 88 55 90 15"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            markerEnd="url(#hero-arrowhead)"
+          />
+          <defs>
+            <marker id="hero-arrowhead" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
+              <path d="M0 0L7 3.5L0 7Z" fill="currentColor" />
+            </marker>
+          </defs>
+        </svg>
+        <p
+          className="absolute right-[8%] top-[220px] text-accent text-lg hidden lg:block z-20 -rotate-6"
+          style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
+        >
+          no signup required!
+        </p>
         <div className="w-full max-w-md lg:max-w-5xl">
           {signedIn && (
             <button
@@ -275,7 +277,7 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-3 gap-6 max-w-4xl mx-auto items-start">
+          <div className="grid sm:grid-cols-3 gap-6 max-w-4xl mx-auto items-stretch">
             <div className="rounded-2xl p-7 border border-dashed border-border bg-surface shadow-sm flex flex-col">
               <div className="w-11 h-11 rounded-full flex items-center justify-center mb-4 bg-bg">
                 <MessageCircle size={20} className="text-primary" />
@@ -310,7 +312,7 @@ export default function Landing() {
               return (
                 <div
                   key={plan.name}
-                  className={`rounded-2xl p-7 border relative transition-transform duration-200 ${
+                  className={`rounded-2xl p-7 border relative transition-transform duration-200 flex flex-col ${
                     plan.highlight
                       ? 'bg-gradient-to-b from-primary/[0.06] to-surface border-primary shadow-xl sm:scale-105'
                       : 'bg-surface border-border shadow-sm hover:shadow-md'
@@ -342,7 +344,7 @@ export default function Landing() {
                   )}
                   {cycle === 'monthly' && <div className="mb-5" />}
 
-                  <ul className="space-y-3 mb-7">
+                  <ul className="space-y-3 mb-7 flex-1">
                     {plan.features.map((f) => (
                       <li key={f} className="flex items-start gap-2.5 text-sm text-text">
                         <Check size={16} className="text-primary flex-shrink-0 mt-0.5" />
