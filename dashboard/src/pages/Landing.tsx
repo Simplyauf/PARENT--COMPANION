@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 import HeroPhone from '../components/HeroPhone'
 
 const AGENT_PHONE = (import.meta.env.VITE_AGENT_PHONE as string) ?? '+14153238173'
+// Prefilled so trying Mae is a single tap, send, no need to think of what to type
+const AGENT_SMS_LINK = `sms:${AGENT_PHONE}?body=${encodeURIComponent('Hello')}`
 
 const TRUST_SIGNALS = [
   { icon: Smartphone, text: 'No app for them to install' },
@@ -123,7 +125,7 @@ export default function Landing() {
               Login
             </button>
             <a
-              href={`sms:${AGENT_PHONE}`}
+              href={AGENT_SMS_LINK}
               className="hidden sm:inline-block bg-primary text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-light transition-colors"
             >
               Try MaeMate for Free
@@ -181,7 +183,7 @@ export default function Landing() {
               need this prominent slot instead. Always shows here regardless
               of sign-in state; "Open your dashboard" is desktop-only below. */}
           <a
-            href={`sms:${AGENT_PHONE}`}
+            href={AGENT_SMS_LINK}
             className="sm:hidden w-full mb-6 bg-primary text-white rounded-xl py-2.5 px-3 text-xs font-medium flex items-center justify-center gap-1.5"
           >
             Try MaeMate for Free
@@ -332,7 +334,7 @@ export default function Landing() {
               </ul>
 
               <a
-                href={`sms:${AGENT_PHONE}`}
+                href={AGENT_SMS_LINK}
                 className="w-full rounded-xl py-3.5 text-sm font-semibold transition-colors text-center bg-bg text-text border border-border hover:border-primary"
               >
                 Text Mae now
