@@ -148,15 +148,16 @@ export default function Landing() {
         )}
       </nav>
 
-      {/* Hero — the phone's right edge and the nav button sit at roughly the
-          same horizontal position (~80% from left), so this is a near-
-          vertical curve rather than a long diagonal sweep. Only makes
-          visual sense pre-scroll, so it lives here (not sticky like nav). */}
+      {/* Hero — kept entirely in the open margin to the right of the phone
+          (phone's right edge sits ~9-10% from the page's right edge, the
+          box below stays at 5-9%, never crossing left into the phone).
+          Only makes visual sense pre-scroll, so it lives here, not sticky
+          like the nav. */}
       <section className="relative flex flex-col items-center justify-center px-4 py-12 lg:py-20">
-        <div className="absolute right-[17%] top-[-40px] w-[70px] h-[280px] pointer-events-none hidden lg:block z-20">
-          <svg viewBox="0 0 70 280" className="w-full h-full text-accent" fill="none">
+        <div className="absolute right-[5%] top-[-20px] w-[50px] h-[220px] pointer-events-none hidden lg:block z-20">
+          <svg viewBox="0 0 50 220" className="w-full h-full text-accent" fill="none">
             <path
-              d="M40 260C55 220 15 160 35 90C45 55 30 30 55 10"
+              d="M35 205C40 150 15 90 22 10"
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
@@ -169,7 +170,7 @@ export default function Landing() {
             </defs>
           </svg>
           <p
-            className="absolute left-[-30px] top-[110px] text-accent text-base -rotate-3 whitespace-nowrap"
+            className="absolute right-[-10px] top-[80px] text-accent text-base -rotate-3 whitespace-nowrap"
             style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic' }}
           >
             no signup required!
