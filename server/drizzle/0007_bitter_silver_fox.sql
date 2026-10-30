@@ -1,0 +1,1 @@
+ALTER TABLE "summary_schedules" ADD COLUMN "last_sent_at" timestamp;
